@@ -12,5 +12,5 @@ class MLP(wf.Model):
 
 model = MLP(720, 10)
 x = wf.Tensor([1,2,3,4,5,6,7,8,9])
-out = model.on_batch(x)
+out = model(x)
 print(out)
