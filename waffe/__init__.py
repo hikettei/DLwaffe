@@ -2,6 +2,11 @@
 import pyopencl as cl
 import numpy as np
 
+class WaffeDevice():
+    def __init__(self, device):
+        self.device = device
+
+
 def render_all_devices_info():
     for platform in cl.get_platforms():
         for i, device in enumerate(platform.get_devices()):
@@ -14,13 +19,18 @@ def render_all_devices_info():
             print("Device memory:   ", device.global_mem_size//1024//1024, 'MB')
             print("Device units:    ", device.max_compute_units)
 
+
 def backends():
-    device_list = []
+    device_list = {}
     for platform in cl.get_platforms():
         for i, device in enumerate(platform.get_devices()):
-            device_list.append(f"{cl.device_type.to_string(device.type)}:{i}")
+            device_list[f"device:{i}"] = WaffeDevice(device)
     return device_list
 
+def get_device(name):
+    device_list = backends()
+    if name in device_list.keys():
+        return device_list[name]
 
 from ._model import Model
 from ._dataset import Dataset
