@@ -83,7 +83,13 @@ class Tensor():
         #local_sizes = (int(self.device.TSM/self.device.WPTM), int(self.device.TSN/self.device.WPTN))
         #print(global_sizes)
         #print(local_sizes)
-        event = self.device.prg.matmul(self.device.queue, (int(M/self.device.WPTM),), None, M, N, K, self.x_buf, self.x_buf, res.x_buf)
+        #int(M/self.device.WPTM)
+
+        heads = int(M/self.device.WPTM)
+        if heads < 1:
+            heads = 1
+        heads = 1 # tmp
+        event = self.device.prg.matmul(self.device.queue, (heads, ), None, M, N, K, self.x_buf, self.x_buf, res.x_buf)
         cl.wait_for_events([event, ])
         
         return res
@@ -111,3 +117,9 @@ class Tensor():
 
 def empty(dim, dtype=None, device=None):
     return Tensor(np.empty(dim, dtype=dtype), dtype=dtype, device=device)
+
+def randn(dim, device=None):
+    return Tensor(np.randn(dim), device=device)
+
+def randint(low, high, dim, device=None):
+    return Tensor(np.randint(low, high, dim), device=device)

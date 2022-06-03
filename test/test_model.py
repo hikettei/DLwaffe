@@ -10,7 +10,7 @@ class MLP(wf.Model):
         return self.layer1(x)
 
 
-model = MLP(720, 10)
-x = wf.empty((720, 1))
+model = MLP(720, 30)
+x = wf.randn((720, 1))
 out = model(x)
 print(out)

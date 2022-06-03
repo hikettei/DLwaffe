@@ -23,14 +23,17 @@ print(xt1)
 xt3 = wf.empty((2, 10))
 print(xt3)
 
+size = 1024
+N = 1000
+
 gpu_device = wf.get_device("device:1")
 
-gpu_x = wf.empty((3000, 3000), device=gpu_device)
-gpu_y = wf.empty((3000, 3000), device=gpu_device)
+gpu_x = wf.empty((size, size), device=gpu_device)
+gpu_y = wf.empty((size, size), device=gpu_device)
 
 time1 = time()
 
-for _ in range(10):
+for _ in range(N):
 	gpu_x @ gpu_y
 
 time2 = time()
@@ -40,21 +43,21 @@ print("Execution time of test with device:1 ", time2 - time1, "s")
 
 cpu_device = wf.get_device("device:0")
 
-cpu_x = wf.empty((3000, 3000), device=cpu_device)
-cpu_y = wf.empty((3000, 3000), device=cpu_device)
+cpu_x = wf.empty((size, size), device=cpu_device)
+cpu_y = wf.empty((size, size), device=cpu_device)
 
 time1 = time()
-for _ in range(10):
+for _ in range(N):
 	gpu_x @ gpu_y
 time2 = time()
 
 print("Execution time of test with device:0 ", time2 - time1, "s")
 
-x = np.empty((3000, 3000))
-y = np.empty((3000, 3000))
+x = np.empty((size, size))
+y = np.empty((size, size))
 
 time1 = time()
-for _ in range(10):
+for _ in range(N):
 	x @ y
 time2 = time()
 
