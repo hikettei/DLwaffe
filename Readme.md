@@ -1,3 +1,4 @@
 
-# DLwaffe, A clpy base deeplearning library that enables to support OpenCL.
+# DLwaffe, a OpenCL based deeplearning library
 
+This Python package is under development.
