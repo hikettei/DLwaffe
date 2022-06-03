@@ -7,5 +7,6 @@ class ModuleEventListener():
 
     def on_epoch(func, *args, **kwargs):
         def on_epoch_(*args, **kwargs):
+        	# if verbose=True, put log
             return func(*args, **kwargs)
         return on_epoch_

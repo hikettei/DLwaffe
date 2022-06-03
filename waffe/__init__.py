@@ -1,10 +1,20 @@
+from ._model   import Model
+from ._dataset import Dataset
+from ._trainer import Trainer
+from ._tensor  import Tensor, WaffeDevice, empty
+
+
+# Module nn
+
+from . import nn
+
+
+# waffe.dtype
+
+# from numpy import int64
 
 import pyopencl as cl
 import numpy as np
-
-class WaffeDevice():
-    def __init__(self, device):
-        self.device = device
 
 
 def render_all_devices_info():
@@ -22,6 +32,9 @@ def render_all_devices_info():
 
 def backends():
     device_list = {}
+    if not  cl.get_platforms():
+        raise RuntimeError('No OpenCL platforms')
+
     for platform in cl.get_platforms():
         for i, device in enumerate(platform.get_devices()):
             device_list[f"device:{i}"] = WaffeDevice(device)
@@ -31,13 +44,3 @@ def get_device(name):
     device_list = backends()
     if name in device_list.keys():
         return device_list[name]
-
-from ._model import Model
-from ._dataset import Dataset
-from ._trainer import Trainer
-from ._tensor  import Tensor
-
-
-# Module nn
-
-from . import nn
