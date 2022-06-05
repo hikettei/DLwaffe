@@ -69,14 +69,11 @@ class Tensor():
     def __str__(self):
         return wftensor_to_str(self.x)
 
-    def __add__(self, y):
-        #assert self.dim() == y.dim(), "The mismatch shape"
-        print(y)
 
     def __matmul__(self, y):
         assert self.dim()[0] == y.dim()[0], "The mismatch shape"
         assert self.device.name == y.device.name, "The device doesn't correspond"
-        M = np.int32(self.dim()[0])
+        M = np.int32(self.dim()[1])
         K = np.int32(self.dim()[0])
         N = np.int32(y.dim()[1])
 
@@ -98,6 +95,17 @@ class Tensor():
         cl.wait_for_events([event, ])
         
         return res
+
+    def __mod__(self, y):
+        assert self.dim()[0] == y.dim()[0], "The mismatch shape"
+        assert self.device.name == y.device.name, "The device doesn't correspond"
+        M = np.int32(self.dim()[0])
+        N = np.int32(self.dim()[1])
+        K = np.int32(y.dim()[1] if len(y.dim()) > 1 else 1)
+        gsize = (int(M), )
+        event = self.device.prg.matpluscols(self.device.queue, gsize, None, M, N, K, self.x_buf, y.x_buf, self.x_buf)
+        cl.wait_for_events([event, ])
+        return self
 
     def to_list(self):
         # x.to_list() returns list

@@ -1,7 +1,7 @@
 from ._model   import Model
 from ._dataset import Dataset
 from ._trainer import Trainer
-from ._tensor  import Tensor, WaffeDevice, empty
+from ._tensor  import Tensor, WaffeDevice, empty, randn, randint
 
 
 # Module nn
