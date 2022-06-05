@@ -35,6 +35,7 @@ class WaffeDevice():
             self.TSM, self.TSN, self.TSK, self.WPTM, self.WPTN, floatX, self.TS)
 
         self.prg = cl.Program(self.ctx, MAT_KERNELS).build(options)
+        self.name = cl_device.name
 
 class Tensor():
     def __init__(self, x, dtype=None, device=None, x_buf=None):
@@ -68,9 +69,13 @@ class Tensor():
     def __str__(self):
         return wftensor_to_str(self.x)
 
+    def __add__(self, y):
+        #assert self.dim() == y.dim(), "The mismatch shape"
+        print(y)
+
     def __matmul__(self, y):
         assert self.dim()[0] == y.dim()[0], "The mismatch shape"
-
+        assert self.device.name == y.device.name, "The device doesn't correspond"
         M = np.int32(self.dim()[0])
         K = np.int32(self.dim()[0])
         N = np.int32(y.dim()[1])
@@ -89,7 +94,7 @@ class Tensor():
         if heads < 1:
             heads = 1
         heads = 1 # tmp
-        event = self.device.prg.matmul(self.device.queue, (heads, ), None, M, N, K, self.x_buf, self.x_buf, res.x_buf)
+        event = self.device.prg.matmul(self.device.queue, (heads, ), None, M, N, K, self.x_buf, y.x_buf, res.x_buf)
         cl.wait_for_events([event, ])
         
         return res
@@ -118,8 +123,8 @@ class Tensor():
 def empty(dim, dtype=None, device=None):
     return Tensor(np.empty(dim, dtype=dtype), dtype=dtype, device=device)
 
-def randn(dim, device=None):
-    return Tensor(np.randn(dim), device=device)
+def randn(*args, device=None):
+    return Tensor(np.random.randn(*args), device=device)
 
 def randint(low, high, dim, device=None):
-    return Tensor(np.randint(low, high, dim), device=device)
+    return Tensor(np.random.randint(low, high, dim), device=device)
