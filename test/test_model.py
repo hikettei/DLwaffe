@@ -12,5 +12,6 @@ device = wf.get_device("device:1")
 
 model = MLP(720, 10, device=device)
 x = wf.randn(720, 1, device=device)
+
 out = model(x)
 print(out)

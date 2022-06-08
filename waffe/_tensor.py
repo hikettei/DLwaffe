@@ -45,30 +45,42 @@ class Tensor():
             x ... the type of x is as follows: list, numpy.array, numpy.ndarray
         """
 
-        assert isinstance(x, list) or type(x).__module__ == np.__name__, "The first argument of wf.Tensor must be list or numpy list"        
+        assert isinstance(x, list) or isinstance(x, (float, int)) or type(x).__module__ == np.__name__, "The first argument of wf.Tensor must be list or numpy list"        
 
-        if isinstance(x, list):
-            x = np.asarray(x).astype(np.float32)
-
-        if dtype is None:
-            dtype = x.dtype
 
         if device is None:
             device = wf.get_device("device:0") # In default, use cpu
 
+        self.data = False
+
+        if isinstance(x, (float, int)): # 1x1の行列として扱う
+            x = np.asarray([[x]]).astype(device.DTYPE)
+            self.d_shape = 1
+            self.data = x
+        else:
+            x = np.asarray(x).astype(device.DTYPE)
+            self.d_shape = x.shape 
+
+        if len(x.shape) <= 1:
+            x = np.asarray([x]).astype(device.DTYPE)
+
+        self.shape = x.shape
+
+        if dtype is None:
+            dtype = x.dtype
+
         # Restore device, dtype
         self.device = device
         self.dtype  = dtype
+        self.backwards = []
 
-        self.x     = x #remove it in the future, because it makes memory-usage 2*n
         if x_buf is None:
-            self.x_buf = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR, hostbuf=self.x)
+            self.x_buf = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR, hostbuf=x)
         else:
             self.x_buf = x_buf
 
     def __str__(self):
-        return wftensor_to_str(self.x)
-
+        return wftensor_to_str(self.detach())
 
     def __matmul__(self, y):
         assert self.dim()[0] == y.dim()[0], "The mismatch shape"
@@ -96,6 +108,59 @@ class Tensor():
         
         return res
 
+    def __add__(self, y):
+        assert self.dim()[0] == y.dim()[0]
+        assert self.dim()[1] == y.dim()[1]
+        M = np.int32(self.dim()[0])
+        N = np.int32(self.dim()[1])
+
+        cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
+        resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
+        res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff)
+
+        event = self.device.prg.matsum(self.device.queue, (1,), None, M, N, self.x_buf, y.x_buf, res.x_buf)
+        cl.wait_for_events([event, ])
+        return res
+
+    def __sub__(self, y):
+        assert y.dim()[0] == self.dim()[0]
+        assert y.dim()[1] == self.dim()[1]
+        M = np.int32(y.dim()[0])
+        N = np.int32(y.dim()[1])
+
+        cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
+        resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
+        res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff)
+
+        event = self.device.prg.matsubstract(self.device.queue, (1,), None, M, N, y.x_buf, self.x_buf, res.x_buf)
+        cl.wait_for_events([event, ])
+        return res
+
+    def __mul__(self, y):
+        if self.data or y.data:
+            if self.data and y.data:
+                x = self.data * y.data
+                return Tensor(x, dtype=self.dtype, device=self.device)
+            else:
+                if self.data:
+                    vec = y
+                else:
+                    vec = self
+                k  = np.int32(self.data or y.data)
+
+                M = np.int32(vec.dim()[0])
+                N = np.int32(vec.dim()[1])
+
+                cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
+                resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
+                res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff)
+
+                event = vec.device.prg.matk(vec.device.queue, (1,), None, M, N, k, vec.x_buf, res.x_buf)
+                cl.wait_for_events([event, ])
+                return res
+        else:
+            return self.__matmul__(y)
+
     def __mod__(self, y):
         assert self.dim()[0] == y.dim()[0], "The mismatch shape"
         assert self.device.name == y.device.name, "The device doesn't correspond"
@@ -109,24 +174,19 @@ class Tensor():
 
     def to_list(self):
         # x.to_list() returns list
-        return self.x
+        return self.detach()
 
-    def reshape_self(self, dim):
-        # it is destructive ver
-        self.x = self.x.reshape(dim)
-        return self
-
-    def reshape(self, dim):
-        # it is not destructive
-        return Tensor(self.x.reshape(dim), dtype=self.dtype, device=self.device)
-
-    def transpose(self, axes=None):
-        #utils.transpose(self, axes=axes)
-        return self
+    def detach(self):
+        x = np.empty(self.shape, dtype=self.device.DTYPE)
+        event = cl.enqueue_copy(self.device.queue, x, self.x_buf)
+        cl.wait_for_events([event, ])
+        if self.d_shape == 1:
+            return np.reshape(x[:self.shape[0], :self.shape[1]], -1).astype(self.dtype)[0]
+        else:
+            return np.reshape(x[:self.shape[0], :self.shape[1]], self.d_shape).astype(self.dtype)
 
     def dim(self):
-        return self.x.shape
-
+        return self.shape
 
 def empty(dim, dtype=None, device=None):
     return Tensor(np.empty(dim, dtype=dtype), dtype=dtype, device=device)

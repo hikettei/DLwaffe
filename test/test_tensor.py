@@ -23,8 +23,8 @@ print(xt1)
 xt3 = wf.empty((2, 10))
 print(xt3)
 
-size = 1024
-N = 1000
+size = 256
+N = 100
 
 gpu_device = wf.get_device("device:1")
 
