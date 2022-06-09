@@ -42,11 +42,13 @@ def is_data(x):
     return isinstance(x, (float, int)) or type(x) in DTYPES.keys()
 
 def register_backwards_value(tensor, f):
-    # Tensorをvについて微分した時、導関数はf()
+    # Tensorをvについて微分した時、導関数はf(v)
     tensor.backwards.append(lambda: ["value", tensor, f])
 
-def register_backwards_node(tensor, *args):
-    tensor.backwards.append(lambda: ["node", args])
+def register_backwards_node(tensor, *args, var=[]):
+    if len(args) == 0:
+        args = []
+    tensor.backwards.append(lambda: ["node", args + var])
 
 def register_backwards_join_node(tensor, *args):
     tensor.backwards.append(lambda: ["join_node", args])
@@ -87,6 +89,7 @@ class Tensor():
         self.device = device
         self.dtype  = dtype
         self.backwards = []
+        self.variables = []
         self.grad = None
         self.is_input = True
 
@@ -94,8 +97,6 @@ class Tensor():
             self.device = extend.device
             self.dtype  = extend.dtype
             self.d_shape = extend.d_shape
-            self.x_buf = extend.x_buf
-            self.data = extend.data
             self.is_input = False
 
         if x_buf is None:
@@ -168,18 +169,19 @@ class Tensor():
             if self.data and y.data:
                 x = self.data * y.data
                 t = Tensor(x, dtype=self.dtype, device=self.device, extend=self)
+                t.variables = [self, y] + self.variables + y.variables
 
                 if self.is_input:
-                    register_backwards_value(self, lambda s: s.data)
+                    register_backwards_value(self, lambda s: self.data)
                 else:
-                    register_backwards_value(self, lambda s: s.grad)
+                    register_backwards_value(self, lambda s: self.grad)
 
                 if y.is_input:
-                    register_backwards_value(y, lambda s: s.data)
+                    register_backwards_value(y, lambda s: y.data)
                 else:
-                    register_backwards_value(y, lambda s: s.grad)
+                    register_backwards_value(y, lambda s: y.grad)
 
-                register_backwards_join_node(t, self, y)
+                register_backwards_node(t, self, y)
                 self.sync()
                 y.sync()
                 return t
@@ -220,7 +222,7 @@ class Tensor():
         self.sync()
         return self
 
-    def backward(self): # 出てくる変数を全て保存しておく
+    def backward(self):
         if self.backwards == []:
             print("No backwards")
 
@@ -232,10 +234,9 @@ class Tensor():
                         node1 = node_lambda1()
                         if node1[0] == "value":
                             var.backward()
-                            print(node1[2](var))
-                            print(var)
+                            #print(var)
+                            #print(node1[2](var))
                             var.grad = node1[2](var)
-
             elif node[0] == "join_node":
                 grads = 1
                 for var in node[1]:
@@ -243,7 +244,6 @@ class Tensor():
                         node1 = node_lambda1()
                         if node1[0] == "value":
                             var.backward()
-                            print(var.grad)
                             grads *= var.grad
                 #self.grad = grads
         return self

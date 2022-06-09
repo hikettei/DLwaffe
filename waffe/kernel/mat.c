@@ -254,7 +254,7 @@ __kernel void matcos(const int M,
 
 	// Store the sum result (coalesced)
 	if (ID0 < M && ID1 < N) {
-		B[ID1 * M + ID0] = sin(bufferA[tx][ty]);
+		B[ID1 * M + ID0] = cos(bufferA[tx][ty]);
 	}
 }
 

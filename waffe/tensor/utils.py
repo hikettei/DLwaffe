@@ -17,12 +17,9 @@ def sin(tensor, require_grad=True):
 	cl.wait_for_events([event, ])
 	res.sync()
 
-	def s(y):
-		return y * wf.cos(tensor / y, require_grad=False)
 	if require_grad:
-		wf.register_backwards_value(res, s)
-		wf.register_backwards_node(res, tensor) # Tensor, a*bを変数一覧とするのではなく、a, bを別々の変数としてTensorに保存しないといけない。。。
-
+		wf.register_backwards_value(res, lambda y: tensor/y * wf.cos(tensor, require_grad=False))
+		wf.register_backwards_node(res, var=tensor.variables)
 	return res
 
 def cos(tensor, require_grad=True):
@@ -38,7 +35,7 @@ def cos(tensor, require_grad=True):
 	res.sync()
 
 	if require_grad:
-		wf.register_backwards_value(res, tensor, lambda y: y * -wf.sin(tensor/y, require_grad=False))
+		wf.register_backwards_value(res, lambda y: tensor/y * -wf.sin(tensor, require_grad=False))
 		wf.register_backwards_node(res, tensor)
 	return res
 
@@ -55,6 +52,6 @@ def log(tensor, require_grad=True):
 	res.sync()
 
 	if require_grad:
-		wf.register_backwards_value(res, tensor, lambda y: y * 1/wf.log(tensor/y, require_grad=False).detach())
+		wf.register_backwards_value(res, lambda y: y * 1/wf.log(tensor/y, require_grad=False).detach())
 		wf.register_backwards_node(res, tensor)
 	return res
