@@ -53,8 +53,13 @@ def register_variables(tensor, variables):
     tensor.variables = variables
 
 def _add(g, args, variables=[], tensor_self=None):
-    for variable in args:
+    for variable in args: # 項
         variable.backward()
+        grads = [] # 使用した変数をcollect, grads=[]に集めて再度代入
+        #for v in variable.variables:
+        #    print("GRAD")
+        #    print(v)
+        #    print(v.grad)
 
 def _mul(*args, variables=[]):
     # len(variables) must be 2
@@ -73,19 +78,18 @@ def _mul(*args, variables=[]):
             for va in v.variables:
                 constant_variable_list.append(va)
 
-        for v in constant_variable_list:
-            #print("======")
+        x_grads = [0.] * len(constant_variable_list)
+        y_grads = [0.] * len(constant_variable_list)
+
+        for i, v in enumerate(constant_variable_list):
             x.backward()
-            x_grad = v.grad
+            x_grads[i] = v.grad
             y.backward()
-            y_grad = v.grad # here
+            y_grads[i] = v.grad   
 
-            #print("sin:{}".format(np.sin(2)))
-            #print("cos:{}".format(np.cos(2)))
-            #print("X * Y' + X' * Y")
-            #print("{} * {} + {} * {}".format(x, y_grad, x_grad, y))
-
-            #print("======")
+        for i, v in enumerate(constant_variable_list):
+            x_grad = x_grads[i]
+            y_grad = y_grads[i]
             v_grads.append(x * y_grad + x_grad * y)
 
         for v, v_grad in zip(constant_variable_list, v_grads):
