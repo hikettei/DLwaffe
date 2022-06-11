@@ -47,7 +47,7 @@ def register_derivative(tensor, f, g):
     tensor.backwards = {"type":"d", "func":_deriv, "args":[f], "g":g}
 
 def register_backwards_node(tensor, ident, *args):
-    tensor.backwards = ({"type":"node", "func":ident, "args":list(args)})
+    tensor.backwards = ({"type":"node", "func":ident, "args":list(args), "g":None})
 
 def register_variables(tensor, variables):
     tensor.variables = variables
@@ -60,30 +60,64 @@ def _add(*args, variables=[]):
         arg.backward(variables)
 
 def _mul(*args, variables=[]):
-    for variable in variables:
-        variable.grad = args[0] / variable
+    # len(variables) must be 2
+    x = variables[0]
+    y = variables[1]
+    t = args[0]
+
+    if x.is_constant and y.is_constant:
+        x.grad = t / x
+        y.grad = t / y
+    else:
+        constant_variable_list = []
+        v_grads = []
+
+        for v in variables:
+            for va in v.variables:
+                constant_variable_list.append(va)
+
+        for v in constant_variable_list:
+            print("======")
+            x.backward()
+            x_grad = v.grad
+            y.backward()
+            y_grad = v.grad # here
+
+            print("sin:{}".format(np.sin(2)))
+            print("cos:{}".format(np.cos(2)))
+            print("X * Y' + X' * Y")
+            print("{} * {} + {} * {}".format(x, y_grad, x_grad, y))
+
+            print("======")
+            v_grads.append(x * y_grad + x_grad * y)
+
+        for v, v_grad in zip(constant_variable_list, v_grads):
+            v.grad = v_grad
+
 
 def _deriv(*args, variables=[], tensor_self=None):
     g_x = args[0] # g(x)
     d_f = args[1][0] # d_f
 
     if g_x is not None:
-        g_x.variables = variables
+        g_x.variables = []
+        for v in variables:
+            if v.is_constant:
+                g_x.variables.append(v)
         g_x.backward()
-
-    for variable in variables:
-        if g_x is None:
-            d_f(tensor_self, variables=[variable]) # _mul
-            variable.grad = variable.grad
-        else:
+        for variable in variables:
             variable.grad = variable.grad * d_f(variable)
-        #print(variable.grad)
-        #print("grad")
-        #print(variable)
-        #print(variable.grad * d_f(variable))
+    else:
+        d_f(tensor_self, variables=variables) # _mul
+
+def deriv_constant(tensor_base):
+    def _deriv_constant(*args, variables=[]):
+        for v in args:
+            v.grad = Tensor(1., extend=tensor_base)
+    return _deriv_constant
 
 class Tensor():
-    def __init__(self, x, dtype=None, device=None, x_buf=None, extend=None):
+    def __init__(self, x, x_buf=None, extend=None, dtype=None, device=None, is_constant=True):
         """
         Exa: wf.Tensor([1,2,3])
         Arguments:
@@ -118,6 +152,9 @@ class Tensor():
         self.device = device
         self.dtype  = dtype
         self.backwards = None
+        register_derivative(self, deriv_constant(self), None)
+
+        self.is_constant = is_constant
         self.variables = []
         self.grad = None
         self.is_input = True
@@ -146,7 +183,7 @@ class Tensor():
 
         cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
         resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
-        res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self)
+        res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self, is_constant=False)
 
         #global_sizes = (int(M/self.device.WPTM), int(N/self.device.WPTN))
         #local_sizes = (int(self.device.TSM/self.device.WPTM), int(self.device.TSN/self.device.WPTN))
@@ -171,7 +208,7 @@ class Tensor():
 
         cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
         resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
-        res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self)
+        res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self, is_constant=False)
         event = self.device.prg.matsum(self.device.queue, (1,), None, M, N, self.x_buf, y.x_buf, res.x_buf)
         cl.wait_for_events([event, ])
         register_backwards_node(res, _add, self, y)
@@ -186,7 +223,7 @@ class Tensor():
 
         cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
         resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
-        res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self)
+        res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self, is_constant=False)
 
         event = self.device.prg.matsubstract(self.device.queue, (1,), None, M, N, y.x_buf, self.x_buf, res.x_buf)
         cl.wait_for_events([event, ])
@@ -194,10 +231,15 @@ class Tensor():
         return res
 
     def __mul__(self, y):
-        if self.data or y.data:
-            if self.data and y.data:
-                x = self.data * y.data
-                t = Tensor(x, dtype=self.dtype, device=self.device, extend=self)
+        if is_data(y):
+            y_data = y
+        else:
+            y_data = y.data
+
+        if self.data or y_data:
+            if self.data and y_data:
+                x = self.data * y_data
+                t = Tensor(x, dtype=self.dtype, device=self.device, extend=self, is_constant=False)
                 register_derivative(t, _mul, None)
                 register_variables(t, [self, y])
                 return t
@@ -206,12 +248,12 @@ class Tensor():
                     vec = y
                 else:
                     vec = self
-                k  = np.int32(self.data or y.data)
+                k  = np.int32(self.data or y_data)
                 M = np.int32(vec.dim()[0])
                 N = np.int32(vec.dim()[1])
                 cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
                 resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
-                res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self)
+                res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self, is_constant=False)
 
                 event = vec.device.prg.matk(vec.device.queue, (1,), None, M, N, k, vec.x_buf, res.x_buf)
                 cl.wait_for_events([event, ])
@@ -238,7 +280,6 @@ class Tensor():
 
     def backward(self):
         b = self.backwards
-        print(b)
         b["func"](b["g"], b["args"], variables=self.variables, tensor_self=self)
         return None
 
