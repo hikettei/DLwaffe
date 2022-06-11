@@ -52,12 +52,9 @@ def register_backwards_node(tensor, ident, *args):
 def register_variables(tensor, variables):
     tensor.variables = variables
 
-def view_node(tensor, nodes=[]):
-    pass
-
-def _add(*args, variables=[]):
-    for arg in args[0]:
-        arg.backward(variables)
+def _add(g, args, variables=[], tensor_self=None):
+    for variable in args:
+        variable.backward()
 
 def _mul(*args, variables=[]):
     # len(variables) must be 2
@@ -77,18 +74,18 @@ def _mul(*args, variables=[]):
                 constant_variable_list.append(va)
 
         for v in constant_variable_list:
-            print("======")
+            #print("======")
             x.backward()
             x_grad = v.grad
             y.backward()
             y_grad = v.grad # here
 
-            print("sin:{}".format(np.sin(2)))
-            print("cos:{}".format(np.cos(2)))
-            print("X * Y' + X' * Y")
-            print("{} * {} + {} * {}".format(x, y_grad, x_grad, y))
+            #print("sin:{}".format(np.sin(2)))
+            #print("cos:{}".format(np.cos(2)))
+            #print("X * Y' + X' * Y")
+            #print("{} * {} + {} * {}".format(x, y_grad, x_grad, y))
 
-            print("======")
+            #print("======")
             v_grads.append(x * y_grad + x_grad * y)
 
         for v, v_grad in zip(constant_variable_list, v_grads):
@@ -113,7 +110,10 @@ def _deriv(*args, variables=[], tensor_self=None):
 def deriv_constant(tensor_base):
     def _deriv_constant(*args, variables=[]):
         for v in args:
-            v.grad = Tensor(1., extend=tensor_base)
+            if v == tensor_base:
+                v.grad = Tensor(1., extend=tensor_base)
+            else:
+                v.grad = Tensor(0., extend=tensor_base)
     return _deriv_constant
 
 class Tensor():
