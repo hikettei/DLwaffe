@@ -42,24 +42,32 @@ def is_data(x):
     return isinstance(x, (float, int)) or type(x) in DTYPES.keys()
 
 def register_derivative(tensor, f, g):
-    #g... 次にBackwardする
+    #g... 次にBackwardするtensor
     #self.variables list of 変数
-    tensor.backwards = {"type":"d", "func":_deriv, "args":[f], "g":g}
+    tensor.backwards = {"type":"d",     "func":_deriv, "args":[f], "g":g}
 
 def register_backwards_node(tensor, ident, *args):
-    tensor.backwards = ({"type":"node", "func":ident, "args":list(args), "g":None})
+    tensor.backwards = {"type":"node", "func":ident, "args":list(args), "g":None}
 
 def register_variables(tensor, variables):
     tensor.variables = variables
 
 def _add(g, args, variables=[], tensor_self=None):
-    for variable in args: # 項
-        variable.backward()
-        grads = [] # 使用した変数をcollect, grads=[]に集めて再度代入
-        #for v in variable.variables:
-        #    print("GRAD")
-        #    print(v)
-        #    print(v.grad)
+    v_grads = {}
+    for i, exp in enumerate(args): # 項でfor
+        exp.backward()
+        grads1 = []
+        for v in exp.variables:
+            if v in v_grads.keys():
+                v_grads[v].append(v.grad)
+            else:
+                v_grads[v] = [v.grad]
+
+    for var, grads in v_grads.items():
+        total = grads[0]
+        for i in range(len(grads) - 1):
+            total += grads[1+i]
+        var.grad = total
 
 def _mul(*args, variables=[]):
     # len(variables) must be 2
@@ -106,6 +114,7 @@ def _deriv(*args, variables=[], tensor_self=None):
             if v.is_constant:
                 g_x.variables.append(v)
         g_x.backward()
+        print(variables)
         for variable in variables:
             variable.grad = variable.grad * d_f(variable)
     else:
@@ -121,6 +130,7 @@ def deriv_constant(tensor_base):
     return _deriv_constant
 
 class Tensor():
+    #2回backwardとかしてないよね？
     def __init__(self, x, x_buf=None, extend=None, dtype=None, device=None, is_constant=True):
         """
         Exa: wf.Tensor([1,2,3])
@@ -159,7 +169,7 @@ class Tensor():
         register_derivative(self, deriv_constant(self), None)
 
         self.is_constant = is_constant
-        self.variables = []
+        self.variables = [self]
         self.grad = None
         self.is_input = True
 
@@ -216,6 +226,7 @@ class Tensor():
         event = self.device.prg.matsum(self.device.queue, (1,), None, M, N, self.x_buf, y.x_buf, res.x_buf)
         cl.wait_for_events([event, ])
         register_backwards_node(res, _add, self, y)
+        register_variables(res, [self, y])
         self.sync()
         return res
 
