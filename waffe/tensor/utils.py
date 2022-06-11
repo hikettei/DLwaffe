@@ -3,9 +3,16 @@ import waffe as wf
 import pyopencl as cl
 import pyopencl.array as clarr
 import numpy as np
+from functools import singledispatch
 
-#@wf.tensor_util(tensor)
+# マクロ使いてぇ〜〜〜
+
 def sin(tensor, require_grad=True):
+	def sin_backward(tensor):
+		def _sin_backward(x):
+			return wf.cos(tensor, require_grad=False)
+		return _sin_backward
+
 	M = np.int32(tensor.dim()[0])
 	N = np.int32(tensor.dim()[1])
 
@@ -15,14 +22,17 @@ def sin(tensor, require_grad=True):
 
 	event = tensor.device.prg.matsin(tensor.device.queue, (1,), None, M, N, tensor.x_buf, res.x_buf)
 	cl.wait_for_events([event, ])
-	res.sync()
-
 	if require_grad:
-		wf.register_backwards_value(res, lambda y: tensor/y * wf.cos(tensor, require_grad=False))
-		wf.register_backwards_node(res, var=tensor.variables)
+		wf.register_derivative(res, sin_backward(tensor), tensor)
+		wf.register_variables(res, tensor.variables)
+	res.sync()
 	return res
 
 def cos(tensor, require_grad=True):
+	def cos_backward(tensor):
+		def _cos_backward(x):
+			return -wf.sin(tensor)
+		return _cos_backward
 	M = np.int32(tensor.dim()[0])
 	N = np.int32(tensor.dim()[1])
 
@@ -32,14 +42,18 @@ def cos(tensor, require_grad=True):
 
 	event = tensor.device.prg.matcos(tensor.device.queue, (1,), None, M, N, tensor.x_buf, res.x_buf)
 	cl.wait_for_events([event, ])
-	res.sync()
 
 	if require_grad:
-		wf.register_backwards_value(res, lambda y: tensor/y * -wf.sin(tensor, require_grad=False))
-		wf.register_backwards_node(res, tensor)
+		wf.register_derivative(res, cos_backward())
+		wf.register_variables(res, tensor)
+	res.sync()
 	return res
 
 def log(tensor, require_grad=True):
+	def log_backward(tensor):
+		def _log_backward(x):
+			return 1 / tensor.detach()
+		return _log_backward
 	M = np.int32(tensor.dim()[0])
 	N = np.int32(tensor.dim()[1])
 
@@ -51,7 +65,4 @@ def log(tensor, require_grad=True):
 	cl.wait_for_events([event, ])
 	res.sync()
 
-	if require_grad:
-		wf.register_backwards_value(res, lambda y: y * 1/wf.log(tensor/y, require_grad=False).detach())
-		wf.register_backwards_node(res, tensor)
 	return res

@@ -41,17 +41,46 @@ class WaffeDevice():
 def is_data(x):
     return isinstance(x, (float, int)) or type(x) in DTYPES.keys()
 
-def register_backwards_value(tensor, f):
-    # Tensorをvについて微分した時、導関数はf(v)
-    tensor.backwards.append(lambda: ["value", tensor, f])
+def register_derivative(tensor, f, g):
+    #g... 次にBackwardする
+    #self.variables list of 変数
+    tensor.backwards = {"type":"d", "func":_deriv, "args":[f], "g":g}
 
-def register_backwards_node(tensor, *args, var=[]):
-    if len(args) == 0:
-        args = []
-    tensor.backwards.append(lambda: ["node", args + var])
+def register_backwards_node(tensor, ident, *args):
+    tensor.backwards = ({"type":"node", "func":ident, "args":list(args)})
 
-def register_backwards_join_node(tensor, *args):
-    tensor.backwards.append(lambda: ["join_node", args])
+def register_variables(tensor, variables):
+    tensor.variables = variables
+
+def view_node(tensor, nodes=[]):
+    pass
+
+def _add(*args, variables=[]):
+    for arg in args[0]:
+        arg.backward(variables)
+
+def _mul(*args, variables=[]):
+    for variable in variables:
+        variable.grad = args[0] / variable
+
+def _deriv(*args, variables=[], tensor_self=None):
+    g_x = args[0] # g(x)
+    d_f = args[1][0] # d_f
+
+    if g_x is not None:
+        g_x.variables = variables
+        g_x.backward()
+
+    for variable in variables:
+        if g_x is None:
+            d_f(tensor_self, variables=[variable]) # _mul
+            variable.grad = variable.grad
+        else:
+            variable.grad = variable.grad * d_f(variable)
+        #print(variable.grad)
+        #print("grad")
+        #print(variable)
+        #print(variable.grad * d_f(variable))
 
 class Tensor():
     def __init__(self, x, dtype=None, device=None, x_buf=None, extend=None):
@@ -88,7 +117,7 @@ class Tensor():
         # Restore device, dtype
         self.device = device
         self.dtype  = dtype
-        self.backwards = []
+        self.backwards = None
         self.variables = []
         self.grad = None
         self.is_input = True
@@ -108,8 +137,9 @@ class Tensor():
         return wftensor_to_str(self.detach())
 
     def __matmul__(self, y):
-        assert self.dim()[0] == y.dim()[0], "The mismatch shape"
-        assert self.device.name == y.device.name, "The device doesn't correspond"
+        assert self.dim()[0] == y.dim()[0]
+        assert self.device.name == y.device.name
+
         M = np.int32(self.dim()[1])
         K = np.int32(self.dim()[0])
         N = np.int32(y.dim()[1])
@@ -142,10 +172,9 @@ class Tensor():
         cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
         resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
         res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self)
-
         event = self.device.prg.matsum(self.device.queue, (1,), None, M, N, self.x_buf, y.x_buf, res.x_buf)
         cl.wait_for_events([event, ])
-        register_backwards_node(res, self, y)
+        register_backwards_node(res, _add, self, y)
         self.sync()
         return res
 
@@ -169,21 +198,8 @@ class Tensor():
             if self.data and y.data:
                 x = self.data * y.data
                 t = Tensor(x, dtype=self.dtype, device=self.device, extend=self)
-                t.variables = [self, y] + self.variables + y.variables
-
-                if self.is_input:
-                    register_backwards_value(self, lambda s: self.data)
-                else:
-                    register_backwards_value(self, lambda s: self.grad)
-
-                if y.is_input:
-                    register_backwards_value(y, lambda s: y.data)
-                else:
-                    register_backwards_value(y, lambda s: y.grad)
-
-                register_backwards_node(t, self, y)
-                self.sync()
-                y.sync()
+                register_derivative(t, _mul, None)
+                register_variables(t, [self, y])
                 return t
             else:
                 if self.data:
@@ -191,10 +207,8 @@ class Tensor():
                 else:
                     vec = self
                 k  = np.int32(self.data or y.data)
-
                 M = np.int32(vec.dim()[0])
                 N = np.int32(vec.dim()[1])
-
                 cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
                 resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
                 res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self)
@@ -223,30 +237,10 @@ class Tensor():
         return self
 
     def backward(self):
-        if self.backwards == []:
-            print("No backwards")
-
-        for node_lambda in self.backwards:
-            node = node_lambda()
-            if node[0] == "node":
-                for var in node[1]:
-                    for node_lambda1 in self.backwards:
-                        node1 = node_lambda1()
-                        if node1[0] == "value":
-                            var.backward()
-                            #print(var)
-                            #print(node1[2](var))
-                            var.grad = node1[2](var)
-            elif node[0] == "join_node":
-                grads = 1
-                for var in node[1]:
-                    for node_lambda1 in self.backwards:
-                        node1 = node_lambda1()
-                        if node1[0] == "value":
-                            var.backward()
-                            grads *= var.grad
-                #self.grad = grads
-        return self
+        b = self.backwards
+        print(b)
+        b["func"](b["g"], b["args"], variables=self.variables, tensor_self=self)
+        return None
 
     def to_list(self):
         # x.to_list() returns list
@@ -277,8 +271,6 @@ class Tensor():
         x = self.detach()
         if is_data(x):
             self.data = x
-
-        self.is_input = False
         return self
 
 def empty(dim, dtype=None, device=None):
