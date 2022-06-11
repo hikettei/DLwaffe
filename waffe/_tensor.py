@@ -68,6 +68,8 @@ def _add(g, args, variables=[], tensor_self=None):
         for i in range(len(grads) - 1):
             total += grads[1+i]
         var.grad = total
+        print(var)
+
 
 def _mul(*args, variables=[]):
     # len(variables) must be 2
@@ -114,7 +116,6 @@ def _deriv(*args, variables=[], tensor_self=None):
             if v.is_constant:
                 g_x.variables.append(v)
         g_x.backward()
-        print(variables)
         for variable in variables:
             variable.grad = variable.grad * d_f(variable)
     else:
