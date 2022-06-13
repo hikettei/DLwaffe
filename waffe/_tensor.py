@@ -68,7 +68,6 @@ def _add(g, args, variables=[], tensor_self=None):
         for i in range(len(grads) - 1):
             total += grads[1+i]
         var.grad = total
-        print(var)
 
 
 def _mul(*args, variables=[]):
@@ -145,7 +144,7 @@ class Tensor():
         if device is None:
             device = wf.get_device("device:0") # In default, use cpu
 
-        self.data = False
+        self.data = None
 
         if is_data(x): # 1x1の行列として扱う
             self.data = x
@@ -167,6 +166,7 @@ class Tensor():
         self.device = device
         self.dtype  = dtype
         self.backwards = None
+
         register_derivative(self, deriv_constant(self), None)
 
         self.is_constant = is_constant
@@ -191,7 +191,6 @@ class Tensor():
     def __matmul__(self, y):
         assert self.dim()[0] == y.dim()[0]
         assert self.device.name == y.device.name
-
         M = np.int32(self.dim()[1])
         K = np.int32(self.dim()[0])
         N = np.int32(y.dim()[1])
@@ -200,12 +199,6 @@ class Tensor():
         resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
         res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self, is_constant=False)
 
-        #global_sizes = (int(M/self.device.WPTM), int(N/self.device.WPTN))
-        #local_sizes = (int(self.device.TSM/self.device.WPTM), int(self.device.TSN/self.device.WPTN))
-        #print(global_sizes)
-        #print(local_sizes)
-        #int(M/self.device.WPTM)
-
         heads = int(M/self.device.WPTM)
         if heads < 1:
             heads = 1
@@ -213,23 +206,59 @@ class Tensor():
         event = self.device.prg.matmul(self.device.queue, (heads, ), None, M, N, K, self.x_buf, y.x_buf, res.x_buf)
         cl.wait_for_events([event, ])
         
+        register_derivative(res, _mul, None)
+        register_variables(res, [self, y])
         return res
 
     def __add__(self, y):
-        assert self.dim()[0] == y.dim()[0]
-        assert self.dim()[1] == y.dim()[1]
-        M = np.int32(self.dim()[0])
-        N = np.int32(self.dim()[1])
+        if is_data(y):
+            y_data = y
+        else:
+            y_data = y.data
 
-        cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
-        resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
-        res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self, is_constant=False)
-        event = self.device.prg.matsum(self.device.queue, (1,), None, M, N, self.x_buf, y.x_buf, res.x_buf)
-        cl.wait_for_events([event, ])
-        register_backwards_node(res, _add, self, y)
-        register_variables(res, [self, y])
-        self.sync()
-        return res
+        self_data_ex = self.data is not None
+        y_data_ex = y_data is not None
+        if self_data_ex or y_data_ex:
+            if self_data_ex and y_data_ex:
+                x = self.data + y_data
+                t = Tensor(x, dtype=self.dtype, device=self.device, extend=self, is_constant=False)
+                register_backwards_node(res, _add, self, y)
+                register_variables(t, [self, y])
+                return t
+            else:
+                if self_data_ex:
+                    vec = y
+                else:
+                    vec = self
+                k  = np.int32(self.data or y_data)
+                M = np.int32(vec.dim()[0])
+                N = np.int32(vec.dim()[1])
+
+                cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
+                resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
+                res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self, is_constant=False)
+
+                event = vec.device.prg.addk(vec.device.queue, (1,), None, M, N, k, vec.x_buf, res.x_buf)
+                cl.wait_for_events([event, ])
+                register_backwards_node(res, _add, self, y)
+                register_variables(res, [self, y])
+                self.sync()
+                return res      
+        else:
+            assert self.dim()[0] == y.dim()[0]
+            assert self.dim()[1] == y.dim()[1]
+            M = np.int32(self.dim()[0])
+            N = np.int32(self.dim()[1])
+
+            cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
+            resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
+            res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self, is_constant=False)
+            event = self.device.prg.matsum(self.device.queue, (1,), None, M, N, self.x_buf, y.x_buf, res.x_buf)
+            cl.wait_for_events([event, ])
+            register_backwards_node(res, _add, self, y)
+            register_variables(res, [self, y])
+            self.sync()
+            return res
 
     def __sub__(self, y):
         assert y.dim()[0] == self.dim()[0]
@@ -243,6 +272,8 @@ class Tensor():
 
         event = self.device.prg.matsubstract(self.device.queue, (1,), None, M, N, y.x_buf, self.x_buf, res.x_buf)
         cl.wait_for_events([event, ])
+        register_derivative(res, _mul, None)
+        register_variables(res, [self, y])
         self.sync()
         return res
 
@@ -252,15 +283,18 @@ class Tensor():
         else:
             y_data = y.data
 
-        if self.data or y_data:
-            if self.data and y_data:
+        self_data_ex = self.data is not None
+        y_data_ex = y_data is not None
+
+        if self_data_ex or y_data_ex:
+            if self_data_ex and y_data_ex:
                 x = self.data * y_data
                 t = Tensor(x, dtype=self.dtype, device=self.device, extend=self, is_constant=False)
                 register_derivative(t, _mul, None)
                 register_variables(t, [self, y])
                 return t
             else:
-                if self.data:
+                if self_data_ex:
                     vec = y
                 else:
                     vec = self
@@ -273,6 +307,8 @@ class Tensor():
 
                 event = vec.device.prg.matk(vec.device.queue, (1,), None, M, N, k, vec.x_buf, res.x_buf)
                 cl.wait_for_events([event, ])
+                register_derivative(res, _mul, None)
+                register_variables(res, [self, y])
                 self.sync()
                 return res
         else:
