@@ -44,13 +44,32 @@ def is_data(x):
 def register_derivative(tensor, f, g):
     #g... 次にBackwardするtensor
     #self.variables list of 変数
-    tensor.backwards = {"type":"d",     "func":_deriv, "args":[f], "g":g}
+    if tensor.requires_grad:
+        tensor.backwards = {"grad_fn":lambda self: _deriv(g, [f], variables=self.variables, tensor_self=self),
+                            "grad_name":f.__name__}
 
 def register_backwards_node(tensor, ident, *args):
-    tensor.backwards = {"type":"node", "func":ident, "args":list(args), "g":None}
+    if tensor.requires_grad:
+        tensor.backwards = {"grad_fn":lambda self: ident(None, list(args), variables=self.variables, tensor_self=self),
+                            "grad_name": ident.__name__}
 
 def register_variables(tensor, variables):
-    tensor.variables = variables
+    if tensor.requires_grad:
+        tensor.variables = variables
+
+def mul2grad(tensor):
+    if tensor.data is None:
+        return Tensor(np.sum(tensor.detach()), device=tensor.device, is_constant=False).no_grad()
+    else:
+        return tensor.no_grad()# * len(base)
+
+def create_res_buffer(tensor):
+    M = np.int32(tensor.dim()[0])
+    N = np.int32(tensor.dim()[1])
+
+    cpu_earr = np.empty((N, M), dtype=tensor.device.DTYPE)
+    resbuff  = cl.Buffer(tensor.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
+    res      = wf.Tensor(cpu_earr, device=tensor.device, x_buf=resbuff, extend=tensor, is_constant=False)
 
 def _add(g, args, variables=[], tensor_self=None):
     v_grads = {}
@@ -67,10 +86,36 @@ def _add(g, args, variables=[], tensor_self=None):
         total = grads[0]
         for i in range(len(grads) - 1):
             total += grads[1+i]
-        var.grad = total
+        if total is None:
+            var.grad = None
+        else:
+            var.grad = mul2grad(total)
 
+def _sum(tensor):
+    def _sum_(g, args, variables=[], tensor_self=None):
+        v_grads = {}
+        for i, exp in enumerate(args):
+            exp.backward()
+            grads1 = []
+            for v in exp.variables:
+                if v in v_grads.keys():
+                    v_grads[v].append(v.grad)
+                else:
+                    v_grads[v] = [v.grad]
 
-def _mul(*args, variables=[]):
+        for var, grads in v_grads.items():
+            total = grads[0]
+            for i in range(len(grads) - 1):
+                total += grads[1+i]
+
+            if total is not None:
+                if total.data is None:
+                    var.grad = Tensor(np.sum(total.detach()), device=tensor.device, requires_grad=False, is_constant=False)
+                else:
+                    var.grad = (total * len(tensor)).no_grad()
+    return _sum_
+
+def _mul(*args, variables=[], wrap_tensor=None):
     # len(variables) must be 2
     x = variables[0]
     y = variables[1]
@@ -102,8 +147,7 @@ def _mul(*args, variables=[]):
             v_grads.append(x * y_grad + x_grad * y)
 
         for v, v_grad in zip(constant_variable_list, v_grads):
-            v.grad = v_grad
-
+            v.grad = mul2grad(v_grad)
 
 def _deriv(*args, variables=[], tensor_self=None):
     g_x = args[0] # g(x)
@@ -116,22 +160,28 @@ def _deriv(*args, variables=[], tensor_self=None):
                 g_x.variables.append(v)
         g_x.backward()
         for variable in variables:
-            variable.grad = variable.grad * d_f(variable)
+            variable.grad = (variable.grad * d_f(variable)).no_grad()
     else:
         d_f(tensor_self, variables=variables) # _mul
+
+def _div_backward(total):
+    def __div_backward(*args, variables=[]):
+        for v in variables:
+            v.grad = v/total
+    return __div_backward
 
 def deriv_constant(tensor_base):
     def _deriv_constant(*args, variables=[]):
         for v in args:
             if v == tensor_base:
-                v.grad = Tensor(1., extend=tensor_base)
+                v.grad = Tensor(1., extend=tensor_base).no_grad()
             else:
-                v.grad = Tensor(0., extend=tensor_base)
+                v.grad = Tensor(0., extend=tensor_base).no_grad()
     return _deriv_constant
 
 class Tensor():
     #2回backwardとかしてないよね？
-    def __init__(self, x, x_buf=None, extend=None, dtype=None, device=None, is_constant=True):
+    def __init__(self, x, x_buf=None, extend=None, dtype=None, device=None, is_constant=True, requires_grad=True):
         """
         Exa: wf.Tensor([1,2,3])
         Arguments:
@@ -162,7 +212,7 @@ class Tensor():
         if dtype is None:
             dtype = x.dtype
 
-        # Restore device, dtype
+        self.requires_grad = requires_grad
         self.device = device
         self.dtype  = dtype
         self.backwards = None
@@ -186,7 +236,7 @@ class Tensor():
             self.x_buf = x_buf
 
     def __str__(self):
-        return wftensor_to_str(self.detach())
+        return wftensor_to_str(self)
 
     def __matmul__(self, y):
         assert self.dim()[0] == y.dim()[0]
@@ -211,6 +261,9 @@ class Tensor():
         return res
 
     def __add__(self, y):
+        self.sync()
+        y.sync()
+
         if is_data(y):
             y_data = y
         else:
@@ -218,28 +271,32 @@ class Tensor():
 
         self_data_ex = self.data is not None
         y_data_ex = y_data is not None
+
         if self_data_ex or y_data_ex:
             if self_data_ex and y_data_ex:
                 x = self.data + y_data
                 t = Tensor(x, dtype=self.dtype, device=self.device, extend=self, is_constant=False)
-                register_backwards_node(res, _add, self, y)
+                register_backwards_node(t, _add, self, y)
                 register_variables(t, [self, y])
                 return t
             else:
                 if self_data_ex:
                     vec = y
+                    k = self.data
                 else:
                     vec = self
-                k  = np.int32(self.data or y_data)
+                    k = y_data
+                k  = np.int32(k)
                 M = np.int32(vec.dim()[0])
                 N = np.int32(vec.dim()[1])
 
-                cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
-                resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
-                res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self, is_constant=False)
+                #cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
+                #resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
+                #res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=vec, is_constant=False)
+                res      = Tensor(vec.detach() + k, device=self.device, is_constant=False)
 
-                event = vec.device.prg.addk(vec.device.queue, (1,), None, M, N, k, vec.x_buf, res.x_buf)
-                cl.wait_for_events([event, ])
+                #event = vec.device.prg.addk(vec.device.queue, (1,), None, M, N, k, vec.x_buf, res.x_buf)
+                #cl.wait_for_events([event, ])
                 register_backwards_node(res, _add, self, y)
                 register_variables(res, [self, y])
                 self.sync()
@@ -250,32 +307,19 @@ class Tensor():
             M = np.int32(self.dim()[0])
             N = np.int32(self.dim()[1])
 
-            cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
-            resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
-            res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self, is_constant=False)
-            event = self.device.prg.matsum(self.device.queue, (1,), None, M, N, self.x_buf, y.x_buf, res.x_buf)
-            cl.wait_for_events([event, ])
+            #cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
+            #resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
+            #res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self, is_constant=False)
+            #event = self.device.prg.matsum(self.device.queue, (1,), None, M, N, self.x_buf, y.x_buf, res.x_buf)
+            #cl.wait_for_events([event, ])
+            res      = Tensor(self.detach() + y.detach(), device=self.device, is_constant=False)
             register_backwards_node(res, _add, self, y)
             register_variables(res, [self, y])
             self.sync()
             return res
 
     def __sub__(self, y):
-        assert y.dim()[0] == self.dim()[0]
-        assert y.dim()[1] == self.dim()[1]
-        M = np.int32(y.dim()[0])
-        N = np.int32(y.dim()[1])
-
-        cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
-        resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
-        res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self, is_constant=False)
-
-        event = self.device.prg.matsubstract(self.device.queue, (1,), None, M, N, y.x_buf, self.x_buf, res.x_buf)
-        cl.wait_for_events([event, ])
-        register_derivative(res, _mul, None)
-        register_variables(res, [self, y])
-        self.sync()
-        return res
+        self.__add__(-1 * y)
 
     def __mul__(self, y):
         if is_data(y):
@@ -301,22 +345,49 @@ class Tensor():
                 k  = np.int32(self.data or y_data)
                 M = np.int32(vec.dim()[0])
                 N = np.int32(vec.dim()[1])
-                cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
-                resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
-                res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self, is_constant=False)
-
-                event = vec.device.prg.matk(vec.device.queue, (1,), None, M, N, k, vec.x_buf, res.x_buf)
-                cl.wait_for_events([event, ])
+                #cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
+                #resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
+                #res      = Tensor(vec.detach() * k, device=self.device, x_buf=resbuff, extend=vec, is_constant=False)
+                res      = Tensor(vec.detach() * k, device=self.device, extend=vec, is_constant=False)
+                #event = vec.device.prg.matk(vec.device.queue, (1,), None, M, N, k, vec.x_buf, res.x_buf)
+                #cl.wait_for_events([event, ])
                 register_derivative(res, _mul, None)
                 register_variables(res, [self, y])
                 self.sync()
                 return res
         else:
             self.sync()
-            return self.__matmul__(y)
+            res = Tensor(self.detach() * y.detach(), device=self.device, extend=self, is_constant=False)
+            register_derivative(res, _mul, None)
+            register_variables(res, [self, y])
+            return res
 
     def __truediv__(self, y):
-        return Tensor(self.detach() / y.detach(), extend=self)
+        return self * utils.reciprocal(y)
+
+    def __pow__(self, k):
+        return None
+
+    def __len__(self):
+        return len(self.detach())
+
+    def sum(self):
+        total = np.sum(self.detach())
+        res = Tensor(total, device=self.device, is_constant=False)
+        res.sync()
+
+        register_backwards_node(res, _sum(self), self)
+        register_variables(res, [self])
+        return res
+
+    def mean(self):
+        s = self.sum()
+        t = Tensor(len(self), device=self.device, is_constant=False)
+        res = s / t
+        res.sync()
+        register_derivative(res, _div_backward(t), self)
+        register_variables(res, self.variables)
+        return res
 
     def __mod__(self, y):
         assert self.dim()[0] == y.dim()[0], "The mismatch shape"
@@ -331,8 +402,10 @@ class Tensor():
         return self
 
     def backward(self):
+        self.sync()
+        #assert self.data is not None, "grad can be implicitly created only for scalar outputs"
         b = self.backwards
-        b["func"](b["g"], b["args"], variables=self.variables, tensor_self=self)
+        b["grad_fn"](self)
         return None
 
     def to_list(self):
@@ -355,6 +428,7 @@ class Tensor():
                 hostbuf=self.x_buf)
 
         cl.wait_for_events([event, ])
+        self.sync()
         return self
 
     def dim(self):
@@ -365,6 +439,11 @@ class Tensor():
         if is_data(x):
             self.data = x
         return self
+
+    def no_grad(self):
+        self.requires_grad = False
+        return self
+
 
 def empty(dim, dtype=None, device=None):
     return Tensor(np.empty(dim, dtype=dtype), dtype=dtype, device=device)
