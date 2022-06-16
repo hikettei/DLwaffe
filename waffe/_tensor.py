@@ -147,14 +147,14 @@ def _mul(*args, variables=[], wrap_tensor=None, div_grad=False):
             x_grad = x_grads[i]
             y_grad = y_grads[i]
             if div_grad:
-                #print(v)
-                #print(x, x_grad, y, y_grad)
-                v_grads.append((x_grad * y -  x * y_grad)/(y*y))
+                v_grads.append((x_grad * y - x * y_grad)/(y*y))
             else:
                 v_grads.append(x * y_grad + x_grad * y)
 
         for v, v_grad in zip(constant_variable_list, v_grads):
             v.grad = mul2grad(v_grad)
+
+        return constant_variable_list
 
 def _deriv(*args, variables=[], tensor_self=None):
     g_x = args[0] # g(x)
@@ -173,6 +173,19 @@ def _deriv(*args, variables=[], tensor_self=None):
 
 def _div(*args, variables=[], wrap_tensor=None):
     return _mul(*args, variables=variables, wrap_tensor=wrap_tensor, div_grad=True)
+
+def _meanbackward(tensor):
+    def __meanbackward(*args, variables=[], wrap_tensor=None):
+        total = Tensor(len(tensor)).no_grad()
+        for var in variables:
+            var.backward()
+            for v in var.variables:
+                if v.grad is None:
+                    v.backward()
+                    for l in v.variables:
+                        if l.grad is not None:
+                            l.grad = mul2grad(l.grad/total)
+    return __meanbackward
 
 def deriv_constant(tensor_base):
     def _deriv_constant(*args, variables=[]):
@@ -404,7 +417,10 @@ class Tensor():
     def mean(self):
         s = self.sum()
         t = Tensor(len(self), device=self.device, is_constant=False)
-        return s / t
+        res = s / t
+        register_derivative(res, _meanbackward(self), None)
+        register_variables(res, [self])
+        return res
 
     def __mod__(self, y):
         assert self.dim()[0] == y.dim()[0], "The mismatch shape"
