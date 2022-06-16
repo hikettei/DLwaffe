@@ -75,7 +75,6 @@ def _add(g, args, variables=[], tensor_self=None):
     v_grads = {}
     for i, exp in enumerate(args): # 項でfor
         exp.backward()
-        grads1 = []
         for v in exp.variables:
             if v in v_grads.keys():
                 v_grads[v].append(v.grad)
@@ -87,7 +86,7 @@ def _add(g, args, variables=[], tensor_self=None):
         for i in range(len(grads) - 1):
             total += grads[1+i]
         if total is None:
-            var.grad = None
+            pass
         else:
             var.grad = mul2grad(total)
 
@@ -115,10 +114,11 @@ def _sum(tensor):
                     var.grad = (total * len(tensor)).no_grad()
     return _sum_
 
-def _mul(*args, variables=[], wrap_tensor=None):
+def _mul(*args, variables=[], wrap_tensor=None, div_grad=False):
     # len(variables) must be 2
     x = variables[0]
     y = variables[1]
+
     t = args[0]
 
     if x.is_constant and y.is_constant:
@@ -135,16 +135,23 @@ def _mul(*args, variables=[], wrap_tensor=None):
         x_grads = [0.] * len(constant_variable_list)
         y_grads = [0.] * len(constant_variable_list)
 
+        x.backward()
         for i, v in enumerate(constant_variable_list):
-            x.backward()
-            x_grads[i] = v.grad
-            y.backward()
-            y_grads[i] = v.grad   
+            x_grads[i] = v.grad if v.grad is not None else Tensor(1.)
+
+        y.backward()
+        for i, v in enumerate(constant_variable_list):
+            y_grads[i] = v.grad if v.grad is not None else Tensor(1.)
 
         for i, v in enumerate(constant_variable_list):
             x_grad = x_grads[i]
             y_grad = y_grads[i]
-            v_grads.append(x * y_grad + x_grad * y)
+            if div_grad:
+                #print(v)
+                #print(x, x_grad, y, y_grad)
+                v_grads.append((x_grad * y -  x * y_grad)/(y*y))
+            else:
+                v_grads.append(x * y_grad + x_grad * y)
 
         for v, v_grad in zip(constant_variable_list, v_grads):
             v.grad = mul2grad(v_grad)
@@ -164,11 +171,8 @@ def _deriv(*args, variables=[], tensor_self=None):
     else:
         d_f(tensor_self, variables=variables) # _mul
 
-def _div_backward(total):
-    def __div_backward(*args, variables=[]):
-        for v in variables:
-            v.grad = v/total
-    return __div_backward
+def _div(*args, variables=[], wrap_tensor=None):
+    return _mul(*args, variables=variables, wrap_tensor=wrap_tensor, div_grad=True)
 
 def deriv_constant(tensor_base):
     def _deriv_constant(*args, variables=[]):
@@ -319,9 +323,9 @@ class Tensor():
             return res
 
     def __sub__(self, y):
-        self.__add__(-1 * y)
+        return self.__add__(Tensor(-1) * y)
 
-    def __mul__(self, y):
+    def __mul__(self, y, reciprocal=False):
         if is_data(y):
             y_data = y
         else:
@@ -332,9 +336,16 @@ class Tensor():
 
         if self_data_ex or y_data_ex:
             if self_data_ex and y_data_ex:
-                x = self.data * y_data
+                if reciprocal:
+                    x = self.data / y_data
+                else:
+                    x = self.data * y_data
                 t = Tensor(x, dtype=self.dtype, device=self.device, extend=self, is_constant=False)
-                register_derivative(t, _mul, None)
+
+                if reciprocal:
+                    register_derivative(t, _div, None)
+                else:
+                    register_derivative(t, _mul, None)
                 register_variables(t, [self, y])
                 return t
             else:
@@ -348,22 +359,32 @@ class Tensor():
                 #cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
                 #resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
                 #res      = Tensor(vec.detach() * k, device=self.device, x_buf=resbuff, extend=vec, is_constant=False)
-                res      = Tensor(vec.detach() * k, device=self.device, extend=vec, is_constant=False)
+                if reciprocal:
+                    res = Tensor(vec.detach() / k, device=self.device, extend=vec, is_constant=False)
+                else:
+                    res = Tensor(vec.detach() * k, device=self.device, extend=vec, is_constant=False)
                 #event = vec.device.prg.matk(vec.device.queue, (1,), None, M, N, k, vec.x_buf, res.x_buf)
                 #cl.wait_for_events([event, ])
-                register_derivative(res, _mul, None)
+                if reciprocal:
+                    register_derivative(res, _div, None)
+                else:
+                    register_derivative(res, _mul, None)
                 register_variables(res, [self, y])
                 self.sync()
                 return res
         else:
             self.sync()
-            res = Tensor(self.detach() * y.detach(), device=self.device, extend=self, is_constant=False)
-            register_derivative(res, _mul, None)
+            if reciprocal:
+                res = Tensor(self.detach() / y.detach(), device=self.device, extend=self, is_constant=False)
+                register_derivative(res, _div, None)
+            else:
+                res = Tensor(self.detach() * y.detach(), device=self.device, extend=self, is_constant=False)
+                register_derivative(res, _mul, None)
             register_variables(res, [self, y])
             return res
 
     def __truediv__(self, y):
-        return self * utils.reciprocal(y)
+        return self.__mul__(y, reciprocal=True)
 
     def __pow__(self, k):
         return None
@@ -383,11 +404,7 @@ class Tensor():
     def mean(self):
         s = self.sum()
         t = Tensor(len(self), device=self.device, is_constant=False)
-        res = s / t
-        res.sync()
-        register_derivative(res, _div_backward(t), self)
-        register_variables(res, self.variables)
-        return res
+        return s / t
 
     def __mod__(self, y):
         assert self.dim()[0] == y.dim()[0], "The mismatch shape"
@@ -444,6 +461,8 @@ class Tensor():
         self.requires_grad = False
         return self
 
+class no_grad():
+    pass
 
 def empty(dim, dtype=None, device=None):
     return Tensor(np.empty(dim, dtype=dtype), dtype=dtype, device=device)
