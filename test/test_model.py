@@ -1,4 +1,5 @@
 import waffe as wf
+import waffe.nn.functional as F
 
 class MLP(wf.Model):
     def __init__(self, embedding_dim, hidden_dim, device=None):
@@ -6,12 +7,14 @@ class MLP(wf.Model):
 
     @wf.Model.on_batch
     def on_batch(self, x):
-        return self.layer1(x)
+        x = self.layer1(x)
+        return wf.sigmoid(x)
+
 
 device = wf.get_device("device:1")
 
-model = MLP(720, 10, device=device)
-x = wf.randn(720, 1, device=device)
-
+model = MLP(3, 3, device=device)
+x = wf.randn(3, 3, device=device)
 out = model(x)
-print(out)
+out.backward()
+print(x.grad)
