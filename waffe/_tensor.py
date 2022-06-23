@@ -70,6 +70,7 @@ def create_res_buffer(tensor):
     cpu_earr = np.empty((N, M), dtype=tensor.device.DTYPE)
     resbuff  = cl.Buffer(tensor.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
     res      = wf.Tensor(cpu_earr, device=tensor.device, x_buf=resbuff, extend=tensor, is_constant=False)
+    return res
 
 def _add(g, args, variables=[], tensor_self=None):
     v_grads = {}
@@ -137,15 +138,19 @@ def _mul(*args, variables=[], wrap_tensor=None, div_grad=False):
 
         x.backward()
         for i, v in enumerate(constant_variable_list):
-            x_grads[i] = v.grad if v.grad is not None else Tensor(1.)
+            x_grads[i] = v.grad if v.grad is not None else Tensor(0.)
+
+        # reset grads
+        [v.zero_grad() for v in constant_variable_list]
 
         y.backward()
         for i, v in enumerate(constant_variable_list):
-            y_grads[i] = v.grad if v.grad is not None else Tensor(1.)
+            y_grads[i] = v.grad if v.grad is not None else Tensor(0.)
 
         for i, v in enumerate(constant_variable_list):
             x_grad = x_grads[i]
             y_grad = y_grads[i]
+
             if div_grad:
                 v_grads.append((x_grad * y - x * y_grad)/(y*y))
             else:
@@ -203,6 +208,8 @@ class Tensor():
         Exa: wf.Tensor([1,2,3])
         Arguments:
             x ... the type of x is as follows: list, numpy.array, numpy.ndarray
+
+        is_constant=FalseであるTensorで微分できない。
         """
 
         assert isinstance(x, list) or is_data(x) or type(x).__module__ == np.__name__, "Not supported data type."        
@@ -237,7 +244,7 @@ class Tensor():
         register_derivative(self, deriv_constant(self), None)
 
         self.is_constant = is_constant
-        self.variables = [self]
+        self.variables = [self] # 
         self.grad = None
         self.is_input = True
 
@@ -339,6 +346,7 @@ class Tensor():
         return self.__add__(Tensor(-1) * y)
 
     def __mul__(self, y, reciprocal=False):
+        self.sync()
         if is_data(y):
             y_data = y
         else:
@@ -359,6 +367,7 @@ class Tensor():
                     register_derivative(t, _div, None)
                 else:
                     register_derivative(t, _mul, None)
+
                 register_variables(t, [self, y])
                 return t
             else:
@@ -386,7 +395,6 @@ class Tensor():
                 self.sync()
                 return res
         else:
-            self.sync()
             if reciprocal:
                 res = Tensor(self.detach() / y.detach(), device=self.device, extend=self, is_constant=False)
                 register_derivative(res, _div, None)
@@ -475,6 +483,10 @@ class Tensor():
 
     def no_grad(self):
         self.requires_grad = False
+        return self
+
+    def zero_grad(self):
+        self.grad = None
         return self
 
 class no_grad():
