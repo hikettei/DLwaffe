@@ -13,6 +13,7 @@ __kernel void matsin(const int M,
 	__local floatX bufferA[TS][TS];
 
 	// Swap the x and y coordinates to perform the rotation (coalesced)
+
 	if (ID0 < M && ID1 < N) {
 		bufferA[tx][ty] = A[ID1 * M + ID0];
 	}

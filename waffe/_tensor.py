@@ -20,10 +20,10 @@ class WaffeDevice():
         assert self.DTYPE in DTYPES
 
         floatX = DTYPES[self.DTYPE]
-        self.TSM = kwargs['TSM'] if 'TSM' in kwargs else 128
-        self.TSN = kwargs['TSN'] if 'TSN' in kwargs else 128
-        self.TSK = kwargs['TSK'] if 'TSK' in kwargs else 8
-        self.TS = kwargs['TS'] if 'TS' in kwargs else 16
+        self.TSM  = kwargs['TSM']  if 'TSM'  in kwargs else 128
+        self.TSN  = kwargs['TSN']  if 'TSN'  in kwargs else 128
+        self.TSK  = kwargs['TSK']  if 'TSK'  in kwargs else 8
+        self.TS   = kwargs['TS']   if 'TS'   in kwargs else 1
         self.WPTM = kwargs['WPTM'] if 'WPTM' in kwargs else 8
         self.WPTN = kwargs['WPTN'] if 'WPTN' in kwargs else 8
 
@@ -34,7 +34,7 @@ class WaffeDevice():
         options = "-DTSM={} -DTSN={} -DTSK={} -DWPTM={} -DWPTN={} -DfloatX={} -DTS={} -cl-mad-enable -cl-fast-relaxed-math".format(
             self.TSM, self.TSN, self.TSK, self.WPTM, self.WPTN, floatX, self.TS)
 
-        self.prg = cl.Program(self.ctx, MAT_KERNELS).build(options)
+        self.prg  = cl.Program(self.ctx, MAT_KERNELS).build(options)
         self.name = cl_device.name
 
 
@@ -68,9 +68,9 @@ def create_res_buffer(tensor):
 
     cpu_earr = np.empty((N, M), dtype=tensor.device.DTYPE)
     resbuff  = cl.Buffer(tensor.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
-    res      = wf.Tensor(cpu_earr, device=tensor.device, x_buf=resbuff, extend=tensor, is_constant=False)
+    res      = Tensor(cpu_earr, device=tensor.device, x_buf=resbuff, extend=tensor, is_constant=False)
 
-    return res
+    return (int(M), int(N)), (int(tensor.device.TS), int(tensor.device.TS)), M, N, res
 
 class Tensor():
     #2回backwardとかしてないよね？
@@ -87,6 +87,7 @@ class Tensor():
 
 
         if device is None:
+            print("Warning: missing device")
             device = wf.get_device("device:0") # In default, use cpu
 
         self.data = None
@@ -147,7 +148,6 @@ class Tensor():
         heads = int(M/self.device.WPTM)
         if heads < 1:
             heads = 1
-        heads = 1 # tmp
         event = self.device.prg.matmul(self.device.queue, (heads, ), None, M, N, K, self.x_buf, y.x_buf, res.x_buf)
         cl.wait_for_events([event, ])
         
@@ -180,31 +180,19 @@ class Tensor():
                     vec = self
                     k = y_data
                 k  = np.int32(k)
-                M = np.int32(vec.dim()[0])
-                N = np.int32(vec.dim()[1])
+                gsize, lsize, M, N, res = create_res_buffer(vec)
 
-                #cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
-                #resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
-                #res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=vec, is_constant=False)
-                res      = Tensor(vec.detach() + k, device=self.device, is_constant=False)
-
-                #event = vec.device.prg.addk(vec.device.queue, (1,), None, M, N, k, vec.x_buf, res.x_buf)
-                #cl.wait_for_events([event, ])
+                event = vec.device.prg.addk(vec.device.queue, gsize, lsize, M, N, k, vec.x_buf, res.x_buf)
+                cl.wait_for_events([event, ])
                 register_backwards_node(res, bw.AddBackward, self, y, variables=[self, y])
                 self.sync()
                 return res      
         else:
             assert self.dim()[0] == y.dim()[0]
             assert self.dim()[1] == y.dim()[1]
-            M = np.int32(self.dim()[0])
-            N = np.int32(self.dim()[1])
-
-            #cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
-            #resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
-            #res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self, is_constant=False)
-            #event = self.device.prg.matsum(self.device.queue, (1,), None, M, N, self.x_buf, y.x_buf, res.x_buf)
-            #cl.wait_for_events([event, ])
-            res      = Tensor(self.detach() + y.detach(), device=self.device, is_constant=False)
+            gsize, lsize, M, N, res = create_res_buffer(self)
+            event = self.device.prg.matsum(self.device.queue, gsize, lsize, M, N, self.x_buf, y.x_buf, res.x_buf)
+            cl.wait_for_events([event, ])
             register_backwards_node(res, bw.AddBackward, self, y, variables=[self, y])
             self.sync()
             return res
@@ -239,17 +227,13 @@ class Tensor():
                 else:
                     vec = self
                 k  = np.int32(self.data or y_data)
-                M = np.int32(vec.dim()[0])
-                N = np.int32(vec.dim()[1])
-                #cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
-                #resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
-                #res      = Tensor(vec.detach() * k, device=self.device, x_buf=resbuff, extend=vec, is_constant=False)
+                gsize, lsize, M, N, res = create_res_buffer(vec)
                 if reciprocal:
-                    res = Tensor(vec.detach() / k, device=self.device, extend=vec, is_constant=False)
+                    event = vec.device.prg.matk(vec.device.queue, gsize, lsize, M, N, 1/k, vec.x_buf, res.x_buf)
+                    cl.wait_for_events([event, ])
                 else:
-                    res = Tensor(vec.detach() * k, device=self.device, extend=vec, is_constant=False)
-                #event = vec.device.prg.matk(vec.device.queue, (1,), None, M, N, k, vec.x_buf, res.x_buf)
-                #cl.wait_for_events([event, ])
+                    event = vec.device.prg.matk(vec.device.queue, gsize, lsize, M, N, k, vec.x_buf, res.x_buf)
+                    cl.wait_for_events([event, ])
                 backward = bw.DivBackward if reciprocal else bw.MulBackward
                 register_derivative(res, backward, None, variables=[self, y])
                 self.sync()
