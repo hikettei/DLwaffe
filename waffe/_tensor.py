@@ -267,7 +267,10 @@ class Tensor():
         return self.__mul__(y, reciprocal=True)
 
     def __pow__(self, k):
-        return None
+        assert isinstance(k, int)
+        res = Tensor(self.detach() ** k, device=self.device, is_constant=False)
+        register_derivative(res, bw._PowBackward(self, k), self, variables=self.variables)
+        return res
 
     def __len__(self):
         return len(self.detach())

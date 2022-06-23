@@ -30,11 +30,10 @@ def AddBackward(g, args, variables=[], tensor_self=None):
             var.grad = mul2grad(total)
 
 def _SumBackward(tensor):
-    def _sum_(g, args, variables=[], tensor_self=None):
+    def _SumBackward_(g, args, variables=[], tensor_self=None):
         v_grads = {}
         for i, exp in enumerate(args):
             exp.backward()
-            grads1 = []
             for v in exp.variables:
                 if v in v_grads.keys():
                     v_grads[v].append(v.grad)
@@ -51,7 +50,7 @@ def _SumBackward(tensor):
                     var.grad = wf.Tensor(np.sum(total.detach()), device=tensor.device, requires_grad=False, is_constant=False)
                 else:
                     var.grad = (total * len(tensor)).no_grad()
-    return _sum_
+    return _SumBackward_
 
 def MulBackward(*args, variables=[], wrap_tensor=None, div_grad=False):
     # len(variables) must be 2
@@ -140,3 +139,8 @@ def _ConstantBackward(tensor_base):
             else:
                 v.grad = wf.Tensor(0., extend=tensor_base).no_grad()
     return ConstantBackward
+
+def _PowBackward(tensor, k):
+    def PowBackward(x):
+        return wf.Tensor(tensor.detach() * k).no_grad()
+    return PowBackward
