@@ -25,7 +25,7 @@ def reset():
 	b2 = torch.tensor(b, requires_grad=True)
 	c2 = torch.tensor(c, requires_grad=True)
 
-def assure(name="", dig=100):
+def assure(name="", dig=100, display_result=False):
 	err = False
 	for x in [[a1.grad, a2.grad], [b1.grad, b2.grad], [c1.grad, c2.grad]]:
 		if not err:
@@ -36,8 +36,9 @@ def assure(name="", dig=100):
 
 	if not err:
 		print("{}: No Error".format(name))
-		reset()
-		return
+		if not display_result:
+			reset()
+			return
 	print("==={}:===========".format(name))
 	for x in [[a1.grad, a2.grad], [b1.grad, b2.grad], [c1.grad, c2.grad]]:
 		print("Waffe:{}".format(x[0]))
@@ -45,53 +46,36 @@ def assure(name="", dig=100):
 
 	reset()
 
-def t1(name="Test1"):
-	z1 = wf.sin(a1 * b1) * wf.cos(a1 * b1)
-	z2 = torch.sin(a2 * b2) * torch.cos(a2 * b2)
+def do_test(waffe_exp, torch_exp, name="Test", display_result=False):
+	z1 = waffe_exp
+	z2 = torch_exp
 	z1.backward()
 	z2.backward()
-	assure(name=name)
+	assure(name=name, display_result=display_result)
 
-def t2(name="Test2"):
-	z1 = wf.sin(a1 * b1) * wf.cos(a1 * b1) + c1
-	z2 = torch.sin(a2 * b2) * torch.cos(a2 * b2) + c2
-	z1.backward()
-	z2.backward()
-	assure(name=name)
+do_test(wf.sin(a1 * b1) * wf.cos(a1 * b1),
+		torch.sin(a2 * b2) * torch.cos(a2 * b2),
+		name="Test1")
 
-def t3(name="Test3"):
-	z1 = wf.sin(a1 + a1)
-	z2 = torch.sin(a2 + a2)
-	z1.backward()
-	z2.backward()
-	assure(name=name)
+do_test(wf.sin(a1 * b1) * wf.cos(a1 * b1) + c1,
+		torch.sin(a2 * b2) * torch.cos(a2 * b2) + c2,
+		name="Test2")
 
-def t4(name="Test4"):
-	z1 = wf.sin(c1 + b1) + a1
-	z2 = torch.sin(c2 + b2) + a2
-	z1.backward()
-	z2.backward()
-	assure(name=name)
+do_test(wf.sin(a1 + a1),
+		torch.sin(a2 + a2),
+		name="Test3")
 
-def t5(name="Test5"):
-	# 二つの式に共通の変数がないとバグる
-	z1 = wf.sin(wf.sin(a1)) / wf.cos(b1)
-	z2 = torch.sin(torch.sin(a2)) / torch.cos(b2)
-	z1.backward()
-	z2.backward()
-	assure(name=name)
+do_test(wf.sin(c1 + b1) + a1,
+		torch.sin(c2 + b2) + a2,
+		name="Test4")
 
-def t6(name="Test6"):
-	# 二つの式に共通の変数がないとバグる
-	z1 = wf.sin(a1) * wf.cos(b1)
-	z2 = torch.sin(a2) * torch.cos(b2)
-	z1.backward()
-	z2.backward()
-	assure(name=name)
+do_test(wf.sin(wf.sin(a1)) / wf.cos(b1),
+		torch.sin(torch.sin(a2)) / torch.cos(b2),
+		name="Test5")
 
-t1()
-t2()
-t3()
-t4()
-t5()
-t6()
+do_test(wf.sin(a1) * wf.cos(b1),
+		torch.sin(a2) * torch.cos(b2),
+		name="Test6")
+
+do_test(c1**2 + b1**2,
+		c2**2 + b2**2, name="Test7")
