@@ -87,7 +87,8 @@ class Tensor():
 
 
         if device is None:
-            print("Warning: missing device")
+            if extend is None:
+                print("Warning: missing device")
             device = wf.get_device("device:0") # In default, use cpu
 
         self.data = None
@@ -202,6 +203,7 @@ class Tensor():
 
     def __mul__(self, y, reciprocal=False):
         self.sync()
+
         if is_data(y):
             y_data = y
         else:
@@ -209,6 +211,15 @@ class Tensor():
 
         self_data_ex = self.data is not None
         y_data_ex = y_data is not None
+
+        if not self_data_ex and not y_data_ex: # matrix * matrix
+            if reciprocal:
+                res = Tensor(self.detach() / y.detach(), device=self.device, extend=self, is_constant=False)
+            else:
+                res = Tensor(self.detach() * y.detach(), device=self.device, extend=self, is_constant=False)
+            backward = bw.DivBackward if reciprocal else bw.MulBackward
+            register_derivative(res, backward, None, variables=[self, y])
+            return res
 
         if self_data_ex or y_data_ex:
             if self_data_ex and y_data_ex:
@@ -226,7 +237,7 @@ class Tensor():
                     vec = y
                 else:
                     vec = self
-                k  = np.int32(self.data or y_data)
+                k  = np.int32(self.data if self.data is not None else y_data)
                 gsize, lsize, M, N, res = create_res_buffer(vec)
                 if reciprocal:
                     event = vec.device.prg.matk(vec.device.queue, gsize, lsize, M, N, 1/k, vec.x_buf, res.x_buf)
@@ -238,14 +249,6 @@ class Tensor():
                 register_derivative(res, backward, None, variables=[self, y])
                 self.sync()
                 return res
-        else:
-            if reciprocal:
-                res = Tensor(self.detach() / y.detach(), device=self.device, extend=self, is_constant=False)
-            else:
-                res = Tensor(self.detach() * y.detach(), device=self.device, extend=self, is_constant=False)
-            backward = bw.DivBackward if reciprocal else bw.MulBackward
-            register_derivative(res, backward, None, variables=[self, y])
-            return res
 
     def __truediv__(self, y):
         return self.__mul__(y, reciprocal=True)
@@ -332,6 +335,9 @@ class Tensor():
     def zero_grad(self):
         self.grad = None
         return self
+
+    def is_data(self):
+        return is_data(self.detach())
 
 class no_grad():
     pass

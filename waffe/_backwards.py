@@ -2,9 +2,10 @@ import waffe as wf
 import numpy as np
 # utils
 
-def mul2grad(tensor):
+def mul2grad(tensor, mean=False):
     if tensor.data is None:
-        return wf.Tensor(np.sum(tensor.detach()), device=tensor.device, is_constant=False).no_grad()
+        total = len(tensor) if mean else 1
+        return wf.Tensor(np.sum(tensor.detach())/total, device=tensor.device, is_constant=False).no_grad()
     else:
         return tensor.no_grad()
 
@@ -58,10 +59,14 @@ def MulBackward(*args, variables=[], wrap_tensor=None, div_grad=False):
     y = variables[1]
 
     t = args[0]
-
     if x.is_constant and y.is_constant:
-        x.grad = t / x
-        y.grad = t / y
+        if x.is_data() and y.is_data():
+            x.grad = t / x
+            y.grad = t / y
+        else:
+            vec = x if y.is_data() else y
+            con = y if y.is_data() else x
+            con.grad = mul2grad(vec)
     else:
         constant_variable_list = []
         v_grads = []
@@ -75,14 +80,14 @@ def MulBackward(*args, variables=[], wrap_tensor=None, div_grad=False):
 
         x.backward()
         for i, v in enumerate(constant_variable_list):
-            x_grads[i] = v.grad if v.grad is not None else wf.Tensor(0.)
+            x_grads[i] = v.grad if v.grad is not None else wf.Tensor(0., device=x.device)
 
         # reset grads
         [v.zero_grad() for v in constant_variable_list]
 
         y.backward()
         for i, v in enumerate(constant_variable_list):
-            y_grads[i] = v.grad if v.grad is not None else wf.Tensor(0.)
+            y_grads[i] = v.grad if v.grad is not None else wf.Tensor(0., device=x.device)
 
         [v.zero_grad() for v in constant_variable_list]
 
@@ -111,11 +116,11 @@ def DerivBackward(*args, variables=[], tensor_self=None):
                 g_x.variables.append(v)
         g_x.backward()
         for variable in variables:
-            print("Grad", variable.grad)
-            print(variable)
-            print(d_f(variable))
-            variable.grad = wf.Tensor(0.) if variable.grad is None else variable.grad
-            variable.grad = (variable.grad * d_f(variable)).no_grad()
+            #print("Grad", variable.grad)
+            #print(variable)
+            #print(d_f(variable))
+            variable.grad = wf.Tensor(1., device=variable.device) if variable.grad is None else variable.grad
+            variable.grad = mul2grad((variable.grad * d_f(variable)), mean=False)
     else:
         d_f(tensor_self, variables=variables) # _mul
 
@@ -124,15 +129,11 @@ def DivBackward(*args, variables=[], wrap_tensor=None):
 
 def _MeanBackward(tensor):
     def MeanBackward(*args, variables=[], wrap_tensor=None):
-        total = wf.Tensor(len(tensor)).no_grad()
-        for var in variables:
-            var.backward()
-            for v in var.variables:
-                if v.grad is None:
-                    v.backward()
-                    for l in v.variables:
-                        if l.grad is not None:
-                            l.grad = mul2grad(l.grad/total)
+        tensor.backward()
+        for v in tensor.variables:
+            if v.grad is not None:
+                print("grad", v.grad)
+                v.grad = mul2grad(v.grad, mean=True)
     return MeanBackward
 
 def _ConstantBackward(tensor_base):
@@ -146,5 +147,5 @@ def _ConstantBackward(tensor_base):
 
 def _PowBackward(tensor, k):
     def PowBackward(x):
-        return wf.Tensor(tensor.detach() * k).no_grad()
+        return wf.Tensor(tensor.detach() * k, device=tensor.device).no_grad()
     return PowBackward
