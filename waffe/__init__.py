@@ -30,17 +30,17 @@ def render_all_devices_info():
             print("Device units:    ", device.max_compute_units)
 
 
-def backends():
+def backends(**kwargs):
     device_list = {}
     if not  cl.get_platforms():
         raise RuntimeError('No OpenCL platforms')
 
     for platform in cl.get_platforms():
         for i, device in enumerate(platform.get_devices()):
-            device_list[f"device:{i}"] = WaffeDevice(device)
+            device_list[f"device:{i}"] = WaffeDevice(device, **kwargs)
     return device_list
 
-def get_device(name):
-    device_list = backends()
+def get_device(name, **kwargs):
+    device_list = backends(**kwargs)
     if name in device_list.keys():
         return device_list[name]

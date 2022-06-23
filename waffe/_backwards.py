@@ -111,6 +111,10 @@ def DerivBackward(*args, variables=[], tensor_self=None):
                 g_x.variables.append(v)
         g_x.backward()
         for variable in variables:
+            print("Grad", variable.grad)
+            print(variable)
+            print(d_f(variable))
+            variable.grad = wf.Tensor(0.) if variable.grad is None else variable.grad
             variable.grad = (variable.grad * d_f(variable)).no_grad()
     else:
         d_f(tensor_self, variables=variables) # _mul
