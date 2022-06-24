@@ -88,13 +88,14 @@ class Tensor():
 
         if device is None:
             if extend is None:
+                #assert False
                 print("Warning: missing device")
             device = wf.get_device("device:0") # In default, use cpu
 
         self.data = None
 
         if is_data(x): # 1x1の行列として扱う
-            self.data = x
+            self.data = device.DTYPE(x)
             x = np.asarray([[x]]).astype(device.DTYPE)
             self.d_shape = 1
         else:
@@ -180,12 +181,12 @@ class Tensor():
                 else:
                     vec = self
                     k = y_data
-                k  = np.int32(k)
+                k  = self.device.DTYPE(k)
                 gsize, lsize, M, N, res = create_res_buffer(vec)
 
                 event = vec.device.prg.addk(vec.device.queue, gsize, lsize, M, N, k, vec.x_buf, res.x_buf)
                 cl.wait_for_events([event, ])
-                register_backwards_node(res, bw.AddBackward, self, y, variables=[self, y])
+                register_backwards_node(res, bw._AddBackward0(vec), self, y, variables=[self, y])
                 self.sync()
                 return res      
         else:
@@ -199,7 +200,7 @@ class Tensor():
             return res
 
     def __sub__(self, y):
-        return self.__add__(Tensor(-1) * y)
+        return self.__add__(Tensor(-1, device=self.device) * y)
 
     def __mul__(self, y, reciprocal=False):
         self.sync()
@@ -237,7 +238,7 @@ class Tensor():
                     vec = y
                 else:
                     vec = self
-                k  = np.int32(self.data if self.data is not None else y_data)
+                k = self.device.DTYPE(self.data if self.data is not None else y_data)
                 gsize, lsize, M, N, res = create_res_buffer(vec)
                 if reciprocal:
                     event = vec.device.prg.matk(vec.device.queue, gsize, lsize, M, N, 1/k, vec.x_buf, res.x_buf)
@@ -292,8 +293,7 @@ class Tensor():
     def backward(self):
         self.sync()
         #assert self.data is not None, "grad can be implicitly created only for scalar outputs"
-        b = self.backwards
-        b["grad_fn"](self)
+        self.backwards["grad_fn"](self)
         return None
 
     def to_list(self):
@@ -309,7 +309,7 @@ class Tensor():
         else:
             try:
                 return np.reshape(x[:self.shape[0], :self.shape[1]], self.d_shape).astype(self.dtype)
-            except:
+            except ValueError:
                 return x.reshape(-1)
 
     def write_mem(self, x_tensor):

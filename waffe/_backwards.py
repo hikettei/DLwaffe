@@ -12,9 +12,9 @@ def mul2grad(tensor, mean=False):
 # Backwards
 
 def AddBackward(g, args, variables=[], tensor_self=None):
+    # 1+1 or matrix + matrix
     v_grads = {}
-
-    for i, exp in enumerate(args): # 項でfor
+    for i, exp in enumerate(args):
         exp.backward()
         for v in exp.variables:
             if v in v_grads.keys():
@@ -25,10 +25,27 @@ def AddBackward(g, args, variables=[], tensor_self=None):
         total = grads[0]
         for i in range(len(grads) - 1):
             total += grads[1+i]
-        if total is None:
-            pass
-        else:
+        if total is not None:
             var.grad = total
+
+def _AddBackward0(tensor):
+    # matrix + 1
+    def AddBackward0(g, args, variables=[], tensor_self=None):
+        v_grads = {}
+        for i, exp in enumerate(args):
+            exp.backward()
+            for v in exp.variables:
+                if v in v_grads.keys():
+                    v_grads[v].append(v.grad)
+                else:
+                    v_grads[v] = [v.grad]
+        for var, grads in v_grads.items():
+            total = grads[0]
+            for i in range(len(grads) - 1):
+                total += grads[1+i]
+            if total is not None:
+                var.grad = total.no_grad()#(total * len(tensor)).no_grad()
+    return AddBackward0
 
 def _SumBackward(tensor):
     def _SumBackward_(g, args, variables=[], tensor_self=None):
@@ -39,6 +56,13 @@ def _SumBackward(tensor):
                 v_grads[v].append(v.grad)
             else:
                 v_grads[v] = [v.grad]
+            
+            for v_ in v.variables:
+                if v != v_:
+                    if v_ in v_grads.keys():
+                        v_grads[v_].append(v_.grad)
+                    else:
+                        v_grads[v_] = [v_.grad]
 
         for var, grads in v_grads.items():
             total = grads[0]
@@ -48,7 +72,10 @@ def _SumBackward(tensor):
                 if total.data is None:
                     var.grad = mul2grad(total)
                 else:
-                    var.grad = (total * len(tensor)).no_grad()
+                    if tensor.is_data():
+                        var.grad = total
+                    else:
+                        var.grad = (total * len(tensor)).no_grad()
     return _SumBackward_
 
 def MulBackward(*args, variables=[], wrap_tensor=None, div_grad=False):
@@ -98,9 +125,12 @@ def MulBackward(*args, variables=[], wrap_tensor=None, div_grad=False):
                 v_grads.append(x * y_grad + x_grad * y)
 
         for v, v_grad in zip(constant_variable_list, v_grads):
-            v.grad = v_grad
+            v.grad = v_grad.no_grad()
 
         return constant_variable_list
+
+def DivBackward(*args, variables=[], wrap_tensor=None):
+    return MulBackward(*args, variables=variables, wrap_tensor=wrap_tensor, div_grad=True)
 
 def DerivBackward(*args, variables=[], tensor_self=None):
     g_x = args[0] # g(x)
@@ -113,13 +143,10 @@ def DerivBackward(*args, variables=[], tensor_self=None):
                 g_x.variables.append(v)
         g_x.backward()
         for variable in variables:
-            variable.grad = wf.Tensor(1., device=variable.device) if variable.grad is None else variable.grad
+            variable.grad = wf.Tensor(1., device=variable.device).no_grad() if variable.grad is None else variable.grad
             variable.grad = (variable.grad * d_f(variable)).no_grad()
     else:
         d_f(tensor_self, variables=variables)
-
-def DivBackward(*args, variables=[], wrap_tensor=None):
-    return MulBackward(*args, variables=variables, wrap_tensor=wrap_tensor, div_grad=True)
 
 def _MeanBackward(tensor):
     def MeanBackward(*args, variables=[], wrap_tensor=None):

@@ -74,13 +74,16 @@ do_test(wf.sin(c1 + b1) + a1,
 		torch.sin(c2 + b2) + a2,
 		name="Test4")
 
-do_test(wf.sin(wf.sin(a1)) / wf.cos(b1),
-		torch.sin(torch.sin(a2)) / torch.cos(b2),
+do_test(wf.sin(a1) / wf.cos(b1),
+		torch.sin(a2) / torch.cos(b2),
 		name="Test5")
 
-do_test(wf.sin(a1) * wf.cos(b1),
-		torch.sin(a2) * torch.cos(b2),
+do_test(wf.cos(wf.sin(wf.sin(a1))) * wf.cos(b1),
+		torch.cos(torch.sin(torch.sin(a2))) * torch.cos(b2),
 		name="Test6")
 
 do_test(c1**2 + b1**2,
 		c2**2 + b2**2, name="Test7")
+
+do_test(wf.sin(c1**2) + wf.cos(b1**2),
+		torch.sin(c2**2) + torch.cos(b2**2), name="Test8")

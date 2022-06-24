@@ -144,7 +144,7 @@ __kernel void matsum(const int M,
 
 __kernel void matk(const int M,
 	const int N,
-	const int k,
+	const floatX k,
 	__global floatX* A,
 	__global floatX* B)
 {
@@ -174,7 +174,7 @@ __kernel void matk(const int M,
 
 __kernel void addk(const int M,
 	const int N,
-	const int k,
+	const floatX k,
 	__global floatX* A,
 	__global floatX* B)
 {
