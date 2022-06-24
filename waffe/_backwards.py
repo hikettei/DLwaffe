@@ -56,9 +56,10 @@ def _SumBackward(tensor):
                 v_grads[v].append(v.grad)
             else:
                 v_grads[v] = [v.grad]
-            
+        
+        for v in tensor.variables:
             for v_ in v.variables:
-                if v != v_:
+                if not v_ in v_grads: #v != v_:
                     if v_ in v_grads.keys():
                         v_grads[v_].append(v_.grad)
                     else:
