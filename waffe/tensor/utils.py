@@ -10,7 +10,7 @@ def create_res_buffer(tensor):
 	M = np.int32(tensor.dim()[0])
 	N = np.int32(tensor.dim()[1])
 
-	cpu_earr = np.empty((N, M), dtype=tensor.device.DTYPE)
+	cpu_earr = np.empty((M, N), dtype=tensor.device.DTYPE)
 	resbuff  = cl.Buffer(tensor.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
 	res      = wf.Tensor(cpu_earr, device=tensor.device, x_buf=resbuff, extend=tensor, is_constant=False)
 

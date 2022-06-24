@@ -66,7 +66,7 @@ def create_res_buffer(tensor):
     M = np.int32(tensor.dim()[0])
     N = np.int32(tensor.dim()[1])
 
-    cpu_earr = np.empty((N, M), dtype=tensor.device.DTYPE)
+    cpu_earr = np.empty((M, N), dtype=tensor.device.DTYPE)
     resbuff  = cl.Buffer(tensor.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
     res      = Tensor(cpu_earr, device=tensor.device, x_buf=resbuff, extend=tensor, is_constant=False)
 
@@ -267,7 +267,7 @@ class Tensor():
         res = Tensor(total, device=self.device, is_constant=False)
         res.sync()
 
-        register_backwards_node(res, bw._SumBackward(self), self, variables=[self])
+        register_backwards_node(res, bw._SumBackward(self), self, variables=self.variables)
         return res
 
     def mean(self):
@@ -307,7 +307,10 @@ class Tensor():
         if self.d_shape == 1:
             return np.reshape(x[:self.shape[0], :self.shape[1]], -1).astype(self.dtype)[0]
         else:
-            return np.reshape(x[:self.shape[0], :self.shape[1]], self.d_shape).astype(self.dtype)
+            try:
+                return np.reshape(x[:self.shape[0], :self.shape[1]], self.d_shape).astype(self.dtype)
+            except:
+                return x.reshape(-1)
 
     def write_mem(self, x_tensor):
         event = cl.enqueue_write_buffer(
