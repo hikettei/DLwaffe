@@ -47,7 +47,7 @@ def _AddBackward0(tensor):
                 var.grad = total.no_grad()#(total * len(tensor)).no_grad()
     return AddBackward0
 
-def _SumBackward(tensor):
+def _SumBackward(tensor, mean=False):
     def _SumBackward_(g, args, variables=[], tensor_self=None):
         v_grads = {}
         tensor.backward()
@@ -71,13 +71,18 @@ def _SumBackward(tensor):
                 total += grads[1+i]
             if total is not None:
                 if total.data is None:
-                    var.grad = mul2grad(total)
+                    var.grad = mul2grad(total, mean=mean)
                 else:
                     if tensor.is_data():
                         var.grad = total
                     else:
                         var.grad = (total * len(tensor)).no_grad()
     return _SumBackward_
+
+def _MeanBackward(tensor):
+    def MeanBackward(*args, **kwargs):
+        return _SumBackward(tensor, mean=True)(*args, **kwargs)
+    return MeanBackward
 
 def MulBackward(*args, variables=[], wrap_tensor=None, div_grad=False):
     # len(variables) must be 2
@@ -121,7 +126,7 @@ def MulBackward(*args, variables=[], wrap_tensor=None, div_grad=False):
             x_grad = x_grads[i]
             y_grad = y_grads[i]
             if div_grad:
-                v_grads.append((x_grad * y - x * y_grad)/(y*y))
+                v_grads.append((x_grad * y - x * y_grad)/(y*y)) # when matrix...?
             else:
                 v_grads.append(x * y_grad + x_grad * y)
 
@@ -148,14 +153,6 @@ def DerivBackward(*args, variables=[], tensor_self=None):
             variable.grad = (variable.grad * d_f(variable)).no_grad()
     else:
         d_f(tensor_self, variables=variables)
-
-def _MeanBackward(tensor):
-    def MeanBackward(*args, variables=[], wrap_tensor=None):
-        tensor.backward()
-        for v in tensor.variables:
-            if v.grad is not None:
-                v.grad = mul2grad(v.grad, mean=True)
-    return MeanBackward
 
 def _ConstantBackward(tensor_base):
     def ConstantBackward(*args, variables=[]):
