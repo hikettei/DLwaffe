@@ -70,7 +70,7 @@ def _SumBackward(tensor, mean=False):
                     var.grad = mul2grad(total, mean=mean)
                 else:
                     if tensor.is_data():
-                        var.grad = total if mean else mean
+                        var.grad = total if mean else total
                     else:
                         var.grad = total if mean else (total * len(tensor)).no_grad()
     return _SumBackward_
