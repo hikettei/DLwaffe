@@ -9,18 +9,28 @@ def mul2grad(tensor, mean=False):
     else:
         return tensor.no_grad()
 
+
+def collect_grads_for_deep_variables(target_variables, v_grads={}):
+    if not target_variables in v_grads:
+        for v in target_variables.variables:
+            if v in v_grads.keys():
+                v_grads[v].append(v.grad)
+            else:
+                v_grads[v] = [v.grad]
+
+    if not target_variables.is_constant:
+        for v in target_variables.variables:
+            collect_grads_for_deep_variables(v, v_grads=v_grads)
 # Backwards
 
 def AddBackward(g, args, variables=[], tensor_self=None):
     # 1+1 or matrix + matrix
     v_grads = {}
+
     for i, exp in enumerate(args):
         exp.backward()
-        for v in exp.variables:
-            if v in v_grads.keys():
-                v_grads[v].append(v.grad)
-            else:
-                v_grads[v] = [v.grad]
+        collect_grads_for_deep_variables(exp, v_grads=v_grads)
+
     for var, grads in v_grads.items():
         total = grads[0]
         for i in range(len(grads) - 1):
@@ -34,11 +44,8 @@ def _AddBackward0(tensor):
         v_grads = {}
         for i, exp in enumerate(args):
             exp.backward()
-            for v in exp.variables:
-                if v in v_grads.keys():
-                    v_grads[v].append(v.grad)
-                else:
-                    v_grads[v] = [v.grad]
+            collect_grads_for_deep_variables(exp, v_grads=v_grads)
+
         for var, grads in v_grads.items():
             total = grads[0]
             for i in range(len(grads) - 1):
@@ -50,20 +57,9 @@ def _AddBackward0(tensor):
 def _SumBackward(tensor, mean=False):
     def _SumBackward_(g, args, variables=[], tensor_self=None):
         v_grads = {}
+
         tensor.backward()
-        for v in tensor.variables:
-            if v in v_grads.keys():
-                v_grads[v].append(v.grad)
-            else:
-                v_grads[v] = [v.grad]
-        
-        for v in tensor.variables:
-            for v_ in v.variables:
-                if not v_ in v_grads: #v != v_:
-                    if v_ in v_grads.keys():
-                        v_grads[v_].append(v_.grad)
-                    else:
-                        v_grads[v_] = [v_.grad]
+        collect_grads_for_deep_variables(tensor, v_grads=v_grads)
 
         for var, grads in v_grads.items():
             total = grads[0]
