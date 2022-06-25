@@ -309,7 +309,8 @@ class Tensor():
         else:
             try:
                 return np.reshape(x[:self.shape[0], :self.shape[1]], self.d_shape).astype(self.dtype)
-            except ValueError:
+            except ValueError: #???
+                return np.reshape(x[:self.shape[0], :self.shape[1]], self.shape).astype(self.dtype)
                 return x.reshape(-1)
 
     def write_mem(self, x_tensor):
