@@ -136,18 +136,18 @@ def DivBackward(*args, variables=[], wrap_tensor=None):
     return MulBackward(*args, variables=variables, wrap_tensor=wrap_tensor, div_grad=True)
 
 def DerivBackward(*args, variables=[], tensor_self=None):
-    g_x = args[0] # g(x)
-    d_f = args[1][0] # d_f
+    g_x = args[0] # g(x) at f(g(x))
+    d_f = args[1][0] # f'
 
     if g_x is not None:
-        g_x.variables = []
+        v_grads = {}
         for v in variables:
-            if v.is_constant:
-                g_x.variables.append(v)
+            collect_grads_for_deep_variables(v, v_grads=v_grads)
+        variables += v_grads.keys()
         g_x.backward()
         for variable in variables:
             variable.grad = wf.Tensor(1., device=variable.device).no_grad() if variable.grad is None else variable.grad
-            variable.grad = (variable.grad * d_f(variable)).no_grad()
+            variable.grad = (d_f(g_x) * variable.grad).no_grad()
     else:
         d_f(tensor_self, variables=variables)
 
