@@ -58,7 +58,7 @@ def model(x):
 	return w*x + b
 
 def mse(p, y):
-	return ((p-y)).mean()
+	return ((p-y)**2).mean()
 
 lr = 1.0e-4
  
