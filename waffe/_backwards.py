@@ -36,7 +36,7 @@ def AddBackward(g, args, variables=[], tensor_self=None):
         for i in range(len(grads) - 1):
             total += grads[1+i]
         if total is not None:
-            var.grad = total
+            var.grad = total#mul2grad??
 
 def _AddBackward0(tensor):
     # matrix + 1
@@ -97,6 +97,7 @@ def MulBackward(*args, variables=[], wrap_tensor=None, div_grad=False):
     else:
         constant_variable_list = []
         v_grads = []
+        #collect_grads_for_deep_variables(exp, v_grads=v_grads)
 
         for v in variables:
             for va in v.variables:
@@ -122,7 +123,7 @@ def MulBackward(*args, variables=[], wrap_tensor=None, div_grad=False):
             x_grad = x_grads[i]
             y_grad = y_grads[i]
             if div_grad:
-                v_grads.append((x_grad * y - x * y_grad)/(y*y)) # when matrix...?
+                v_grads.append((x_grad * y - x * y_grad)/(y*y))
             else:
                 v_grads.append(x * y_grad + x_grad * y)
 

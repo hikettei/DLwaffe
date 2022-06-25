@@ -275,7 +275,7 @@ class Tensor():
         s = self.sum()
         t = Tensor(len(self), device=self.device, is_constant=False)
         res = s / t
-        register_derivative(res, bw._MeanBackward(self), None, variables=[self])
+        register_backwards_node(res, bw._MeanBackward(self), self, variables=self.variables)
         return res
 
     def __mod__(self, y):
@@ -336,7 +336,8 @@ class Tensor():
         return self
 
     def zero_grad(self):
-        self.grad = None
+        # 勾配をリセット
+        self = Tensor(self.detach(), extend=self)
         return self
 
     def is_data(self):
