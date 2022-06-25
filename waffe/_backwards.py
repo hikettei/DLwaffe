@@ -34,7 +34,7 @@ def AddBackward(g, args, variables=[], tensor_self=None):
     for var, grads in v_grads.items():
         total = grads[0]
         for i in range(len(grads) - 1):
-            total += grads[1+i]
+            total = (total + grads[1+i]).no_grad()
         if total is not None:
             var.grad = total#mul2grad??
 
@@ -70,9 +70,9 @@ def _SumBackward(tensor, mean=False):
                     var.grad = mul2grad(total, mean=mean)
                 else:
                     if tensor.is_data():
-                        var.grad = total
+                        var.grad = total if mean else mean
                     else:
-                        var.grad = (total * len(tensor)).no_grad()
+                        var.grad = total if mean else (total * len(tensor)).no_grad()
     return _SumBackward_
 
 def _MeanBackward(tensor):
