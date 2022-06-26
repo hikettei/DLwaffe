@@ -13,3 +13,13 @@ class Linear(wf.Model):
     @wf.Model.on_batch
     def on_batch(self, x):
         return F.linear(x, self.weights, self.bias)
+
+class Dense(wf.Model):
+    def __init__(self, in_features, out_features, bias=True, activation=wf.sigmoid, device=None):
+        factory_kwargs = {'device': device, 'bias':bias}
+        self.linear = Linear(in_features, out_features, **factory_kwargs)
+        self.activation = activation
+
+    @wf.Model.on_batch
+    def on_batch(self, x):
+        return self.activation(self.linear(x))
