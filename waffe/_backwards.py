@@ -26,13 +26,14 @@ def collect_grads_for_deep_variables(target_variables, v_grads={}):
 def collect_grads_for_deep_variables0(target_variables, v_grads={}):
     for v in target_variables.variables:
         if v in v_grads.keys():
-            v_grads[v].append(v.grad)
+            if not v.grad in v_grads[v]:
+                v_grads[v].append(v.grad)
         else:
             v_grads[v] = [v.grad]
 
     if not target_variables.is_constant:
         for v in target_variables.variables:
-            collect_grads_for_deep_variables(v, v_grads=v_grads)
+            collect_grads_for_deep_variables0(v, v_grads=v_grads)
 # Backwards
 
 def AddBackward(g, args, variables=[], tensor_self=None):
@@ -44,7 +45,6 @@ def AddBackward(g, args, variables=[], tensor_self=None):
 
     for var, grads in v_grads.items():
         total = grads[0]
-        print(var, grads)
         for i in range(len(grads) - 1):
             if grads[0] == grads[1+i]: # when detect same grads... exa: test2
                 break
