@@ -11,6 +11,7 @@ def mul2grad(tensor, mean=False):
 
 
 def collect_grads_for_deep_variables(target_variables, v_grads={}):
+    # avoid target_variable itself
     if not target_variables in v_grads:
         for v in target_variables.variables:
             if v in v_grads.keys():
@@ -21,22 +22,35 @@ def collect_grads_for_deep_variables(target_variables, v_grads={}):
     if not target_variables.is_constant:
         for v in target_variables.variables:
             collect_grads_for_deep_variables(v, v_grads=v_grads)
+
+def collect_grads_for_deep_variables0(target_variables, v_grads={}):
+    for v in target_variables.variables:
+        if v in v_grads.keys():
+            v_grads[v].append(v.grad)
+        else:
+            v_grads[v] = [v.grad]
+
+    if not target_variables.is_constant:
+        for v in target_variables.variables:
+            collect_grads_for_deep_variables(v, v_grads=v_grads)
 # Backwards
 
 def AddBackward(g, args, variables=[], tensor_self=None):
     # 1+1 or matrix + matrix
     v_grads = {}
-
     for i, exp in enumerate(args):
         exp.backward()
-        collect_grads_for_deep_variables(exp, v_grads=v_grads)
+        collect_grads_for_deep_variables0(exp, v_grads=v_grads)
 
     for var, grads in v_grads.items():
         total = grads[0]
+        print(var, grads)
         for i in range(len(grads) - 1):
+            if grads[0] == grads[1+i]: # when detect same grads... exa: test2
+                break
             total = (total + grads[1+i]).no_grad()
         if total is not None:
-            var.grad = total#mul2grad??
+            var.grad = total
 
 def _AddBackward0(tensor):
     # matrix + 1
@@ -49,7 +63,9 @@ def _AddBackward0(tensor):
         for var, grads in v_grads.items():
             total = grads[0]
             for i in range(len(grads) - 1):
-                total += grads[1+i]
+                if grads[0] == grads[1+i]: # when detect same grads... exa: test2
+                    break
+                total += (total + grads[1+i]).no_grad()
             if total is not None:
                 var.grad = total.no_grad()#(total * len(tensor)).no_grad()
     return AddBackward0
@@ -88,8 +104,8 @@ def MulBackward(*args, variables=[], wrap_tensor=None, div_grad=False):
     t = args[0]
     if x.is_constant and y.is_constant:
         if x.is_data() and y.is_data():
-            x.grad = t / x
-            y.grad = t / y
+            x.grad = t / x # == y
+            y.grad = t / y # == x
         else:
             vec = x if y.is_data() else y
             con = y if y.is_data() else x
@@ -97,11 +113,12 @@ def MulBackward(*args, variables=[], wrap_tensor=None, div_grad=False):
     else:
         constant_variable_list = []
         v_grads = []
-        #collect_grads_for_deep_variables(exp, v_grads=v_grads)
+        grads = {}
 
-        for v in variables:
-            for va in v.variables:
-                constant_variable_list.append(va)
+        for v in [x, y]:
+            collect_grads_for_deep_variables(v, v_grads=grads)
+
+        constant_variable_list = list(grads.keys())
 
         x_grads = [0.] * len(constant_variable_list)
         y_grads = [0.] * len(constant_variable_list)
@@ -111,13 +128,13 @@ def MulBackward(*args, variables=[], wrap_tensor=None, div_grad=False):
             x_grads[i] = v.grad if v.grad is not None else wf.Tensor(0., device=x.device)
 
         # reset grads
-        [v.zero_grad() for v in constant_variable_list]
+        [v.reset_grad_value() for v in constant_variable_list]
 
         y.backward()
         for i, v in enumerate(constant_variable_list):
             y_grads[i] = v.grad if v.grad is not None else wf.Tensor(0., device=x.device)
 
-        [v.zero_grad() for v in constant_variable_list]
+        [v.reset_grad_value() for v in constant_variable_list]
 
         for i, v in enumerate(constant_variable_list):
             x_grad = x_grads[i]
@@ -140,11 +157,11 @@ def DerivBackward(*args, variables=[], tensor_self=None):
     d_f = args[1][0] # f'
 
     if g_x is not None:
+        g_x.backward()
         v_grads = {}
         for v in variables:
             collect_grads_for_deep_variables(v, v_grads=v_grads)
-        variables += v_grads.keys()
-        g_x.backward()
+        variables = v_grads.keys()
         for variable in variables:
             variable.grad = wf.Tensor(1., device=variable.device).no_grad() if variable.grad is None else variable.grad
             variable.grad = (d_f(g_x) * variable.grad).no_grad()

@@ -165,6 +165,9 @@ class Tensor():
         else:
             y_data = y.data
 
+        if self == y:
+            return self.__mul__(Tensor(2., device=self.device))
+
         self_data_ex = self.data is not None
         y_data_ex = y_data is not None
 
@@ -203,6 +206,10 @@ class Tensor():
         return self.__add__(Tensor(-1, device=self.device) * y)
 
     def __mul__(self, y, reciprocal=False):
+        if self == y:
+            # tmp
+            return self.__pow__(2)
+
         self.sync()
 
         if is_data(y):
@@ -292,6 +299,7 @@ class Tensor():
 
     def backward(self):
         self.sync()
+        #print(self.backwards)
         #assert self.data is not None, "grad can be implicitly created only for scalar outputs"
         self.backwards["grad_fn"](self)
         return None
@@ -339,6 +347,10 @@ class Tensor():
     def zero_grad(self):
         # 勾配をリセット
         self = Tensor(self.detach(), extend=self)
+        return self
+
+    def reset_grad_value(self):
+        self.grad = None
         return self
 
     def is_data(self):
