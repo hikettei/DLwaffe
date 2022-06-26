@@ -52,8 +52,8 @@ def assure(name="", dig=100, display_result=False):
 	reset()
 
 def do_test(waffe_exp, torch_exp, name="Test", display_result=False):
-	z1 = waffe_exp.sum()
-	z2 = torch_exp.sum()
+	z1 = waffe_exp.mean()
+	z2 = torch_exp.mean()
 	z1.backward()
 	z2.backward()
 	assure(name=name, display_result=display_result)
@@ -62,7 +62,7 @@ do_test(wf.sin(a1 * b1),
 		torch.sin(a2 * b2),
 		name="Test1")
 
-do_test(wf.sin(a1 * b1) * b1 ,
+do_test(wf.sin(a1 * b1) * b1,
 		torch.sin(a2 * b2) * b2,
 		name="Test2")
 
@@ -82,8 +82,8 @@ do_test(wf.cos(wf.sin(wf.sin(a1))) * wf.cos(b1),
 		torch.cos(torch.sin(torch.sin(a2))) * torch.cos(b2),
 		name="Test6")
 
-do_test(c1**2 + b1**2,
-		c2**2 + b2**2, name="Test7")
+do_test(a1**2 + b1**2,
+		a2**2 + b2**2, name="Test7")
 
-do_test(wf.sin(c1**2) + wf.cos(b1**2),
-		torch.sin(c2**2) + torch.cos(b2**2), name="Test8")
+do_test(wf.sin(a1**2) + wf.cos(b1**2),
+		torch.sin(a2**2) + torch.cos(b2**2), name="Test8")

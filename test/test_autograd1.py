@@ -4,8 +4,8 @@ from tqdm import tqdm
 import numpy as np
 import torch
 
-N = 20
-x_ = np.random.rand(N)*30-15
+N = 200
+x_ = np.random.randn(N)*30-15
 y_ = 2*x_ + np.random.randn(N)*5
  
 x_ = x_.astype(np.float32)
@@ -46,7 +46,7 @@ print('b    = ', b.item())
 
 
 
-device = wf.get_device("device:1")
+device = wf.get_device("device:0")
 
 x = wf.Tensor(x_, device=device)
 y = wf.Tensor(y_, device=device)

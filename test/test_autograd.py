@@ -5,7 +5,7 @@ import torch
 
 device = wf.get_device("device:1")
 
-a, b, c = 1.0, 9.0, 3.0
+a, b, c = 2.0, 9.0, 3.0
 
 a1 = wf.Tensor(a, device=device)
 b1 = wf.Tensor(b, device=device)
@@ -35,7 +35,8 @@ def assure(name="", dig=100, display_result=False):
 				err = not int(x[0].detach() * dig) ==  int(x[1].detach() * dig)
 
 	if not err:
-		print("{}: No Error".format(name))
+		print('\033[1m' + "{}: No Error".format(name) + '\033[0m')
+		#print("{}: No Error".format(name))
 		if not display_result:
 			reset()
 			return
@@ -57,8 +58,8 @@ do_test(wf.sin(a1 * b1) * wf.cos(a1 * b1),
 		torch.sin(a2 * b2) * torch.cos(a2 * b2),
 		name="Test1")
 
-do_test(wf.sin(a1 * b1) * wf.cos(a1 * b1) + c1,
-		torch.sin(a2 * b2) * torch.cos(a2 * b2) + c2,
+do_test(wf.sin(a1 * b1) * wf.cos(c1 * b1) + c1,
+		torch.sin(a2 * b2) * torch.cos(c2 * b2) + c2,
 		name="Test2")
 
 do_test(wf.sin(a1 + a1),
@@ -79,3 +80,9 @@ do_test(wf.sin(a1) * wf.cos(b1),
 
 do_test(c1**2 + b1**2,
 		c2**2 + b2**2, name="Test7")
+
+do_test(c1*c1 + b1*b1,
+		c2*c2 + b2*b2, name="Test8")
+
+do_test(wf.sin(a1*b1) + wf.cos(b1*c1),
+		torch.sin(a2*b2) + torch.cos(b2*c2), name="Test9")
