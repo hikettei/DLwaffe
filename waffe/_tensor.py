@@ -20,12 +20,12 @@ class WaffeDevice():
         assert self.DTYPE in DTYPES
 
         floatX = DTYPES[self.DTYPE]
-        self.TSM  = kwargs['TSM']  if 'TSM'  in kwargs else 128
-        self.TSN  = kwargs['TSN']  if 'TSN'  in kwargs else 128
-        self.TSK  = kwargs['TSK']  if 'TSK'  in kwargs else 8
+        self.TSM  = kwargs['TSM']  if 'TSM'  in kwargs else 1
+        self.TSN  = kwargs['TSN']  if 'TSN'  in kwargs else 1
+        self.TSK  = kwargs['TSK']  if 'TSK'  in kwargs else 1
         self.TS   = kwargs['TS']   if 'TS'   in kwargs else 1
-        self.WPTM = kwargs['WPTM'] if 'WPTM' in kwargs else 8
-        self.WPTN = kwargs['WPTN'] if 'WPTN' in kwargs else 8
+        self.WPTM = kwargs['WPTM'] if 'WPTM' in kwargs else 1
+        self.WPTN = kwargs['WPTN'] if 'WPTN' in kwargs else 1
 
         self.cl_device = cl_device
         self.ctx      = cl.Context([cl_device])
@@ -137,24 +137,14 @@ class Tensor():
         return wftensor_to_str(self)
 
     def __matmul__(self, y):
-        assert self.dim()[0] == y.dim()[0]
-        assert self.device.name == y.device.name
-        M = np.int32(self.dim()[1])
-        K = np.int32(self.dim()[0])
-        N = np.int32(y.dim()[1])
+        #assert self.dim()[0] == y.dim()[0]
 
-        cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
-        resbuff  = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
-        res      = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self, is_constant=False)
-
-        heads = int(M/self.device.WPTM)
-        if heads < 1:
-            heads = 1
-        event = self.device.prg.matmul(self.device.queue, (heads, ), None, M, N, K, self.x_buf, y.x_buf, res.x_buf)
-        cl.wait_for_events([event, ])
-        
-        register_derivative(res, bw.MulBackward, None, variables=[self, y])
+        res = Tensor(self.detach() @ y.detach(), dtype=self.dtype, device=self.device, extend=self, is_constant=False)
+        #register_backwards_node(res, bw.MulBackward, None, variables=[self, y])
         return res
+
+
+        return wf.matmul(self, y)
 
     def __add__(self, y):
         self.sync()
@@ -170,6 +160,16 @@ class Tensor():
 
         self_data_ex = self.data is not None
         y_data_ex = y_data is not None
+
+        # [[1,2,3], [4,5,6], [7,8,9]] + [1,2,3]
+        if self.dim() != y.dim():
+            if self.dim()[1] == y.dim()[1]:
+                K = np.int32(y.dim()[1])
+                gsize, lsize, M, N, res = create_res_buffer(self)
+                event = self.device.prg.matpluscols(self.device.queue, gsize, lsize, M, N, K, self.x_buf, y.x_buf, res.x_buf)
+                cl.wait_for_events([event, ])
+                register_backwards_node(res, bw._AddBackward0(self), self, y, variables=[self, y])
+                return res
 
         if self_data_ex or y_data_ex:
             if self_data_ex and y_data_ex:
@@ -285,17 +285,21 @@ class Tensor():
         register_backwards_node(res, bw._MeanBackward(self), self, variables=self.variables)
         return res
 
-    def __mod__(self, y):
-        assert self.dim()[0] == y.dim()[0], "The mismatch shape"
-        assert self.device.name == y.device.name, "The device doesn't correspond"
+    def transpose(self):
         M = np.int32(self.dim()[0])
         N = np.int32(self.dim()[1])
-        K = np.int32(y.dim()[1] if len(y.dim()) > 1 else 1)
-        gsize = (int(M), )
-        event = self.device.prg.matpluscols(self.device.queue, gsize, None, M, N, K, self.x_buf, y.x_buf, self.x_buf)
+        cpu_earr = np.empty((N, M), dtype=self.device.DTYPE)
+        resbuff = cl.Buffer(self.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
+        res = Tensor(cpu_earr, device=self.device, x_buf=resbuff, extend=self, is_constant=False)
+
+        gsize = (int(N), int(M))
+        lsize = (int(self.device.TS), int(self.device.TS))
+
+        event = self.device.prg.transpose(self.device.queue, gsize, lsize, N, M, self.x_buf, res.x_buf)
         cl.wait_for_events([event, ])
-        self.sync()
-        return self
+        #TransposeBackward
+        return res
+
 
     def backward(self):
         self.sync()
@@ -303,10 +307,6 @@ class Tensor():
         #assert self.data is not None, "grad can be implicitly created only for scalar outputs"
         self.backwards["grad_fn"](self)
         return None
-
-    def to_list(self):
-        # x.to_list() returns list
-        return self.detach()
 
     def detach(self):
         x = np.empty(self.shape, dtype=self.device.DTYPE)

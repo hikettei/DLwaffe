@@ -3,6 +3,7 @@ from ._dataset import Dataset
 from ._trainer import Trainer
 from ._tensor  import Tensor, WaffeDevice, empty, randn, randint, register_derivative, register_backwards_node, register_variables
 from .tensor.utils import *
+from .tensor.matmul import matmul
 
 # Module nn
 

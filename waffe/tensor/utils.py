@@ -28,7 +28,7 @@ def sin(tensor, require_grad=True):
 	cl.wait_for_events([event, ])
 	if require_grad:
 		wf.register_derivative(res, sin_backward(tensor), tensor)
-		wf.register_variables(res, tensor.variables)
+		wf.register_variables(res, [tensor])
 	res.sync()
 	return res
 
@@ -45,7 +45,7 @@ def cos(tensor, require_grad=True):
 
 	if require_grad:
 		wf.register_derivative(res, cos_backward(tensor), tensor)
-		wf.register_variables(res, tensor.variables)
+		wf.register_variables(res, [tensor])
 	res.sync()
 	return res
 
@@ -62,7 +62,7 @@ def log(tensor, require_grad=True):
 
 	if require_grad:
 		wf.register_derivative(res, log_backward(tensor), tensor)
-		wf.register_variables(res, tensor.variables)
+		wf.register_variables(res, [tensor])
 	res.sync()
 
 	return res
