@@ -137,13 +137,6 @@ class Tensor():
         return wftensor_to_str(self)
 
     def __matmul__(self, y):
-        #assert self.dim()[0] == y.dim()[0]
-
-        res = Tensor(self.detach() @ y.detach(), dtype=self.dtype, device=self.device, extend=self, is_constant=False)
-        #register_backwards_node(res, bw.MulBackward, None, variables=[self, y])
-        return res
-
-
         return wf.matmul(self, y)
 
     def __add__(self, y):
