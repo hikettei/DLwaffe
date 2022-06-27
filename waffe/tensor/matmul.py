@@ -64,9 +64,9 @@ def _matrix_matrix_product(A, B):
 	#assert A.dim()[1] == B.dim()[0], "cannot multiply mat1 and mat2 due to mismatch of A.dim()[0]"
 	M = np.int32(A.dim()[0])
 	K = np.int32(A.dim()[0])
-	N = np.int32(B.dim()[1])
+	N = np.int32(B.dim()[0])
 
-	cpu_earr = np.empty((N, M), dtype=A.device.DTYPE)
+	cpu_earr = np.empty((M, N), dtype=A.device.DTYPE)
 	resbuff  = cl.Buffer(A.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
 	res      = wf.Tensor(cpu_earr, device=A.device, x_buf=resbuff, extend=A, is_constant=False)
 
