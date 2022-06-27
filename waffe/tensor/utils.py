@@ -4,7 +4,6 @@ import pyopencl as cl
 import pyopencl.array as clarr
 import numpy as np
 
-# マクロ使いてぇ〜〜〜
 
 def create_res_buffer(tensor):
 	M = np.int32(tensor.dim()[0])
@@ -86,5 +85,25 @@ def sigmoid(tensor, require_grad=True):
 		wf.register_variables(res, tensor.variables)
 	res.sync()
 
+	return res
+
+def expand_dims(tensor, axis, require_grad=True):
+	def ExpandDimsBackward(tensor):
+		def _ExpandDimsBackward(x):
+			return wf.Tensor(np.expand_dims(tensor.detach(), axis=axis), extend=tensor, is_constant=False)
+		return _ExpandDimsBackward
+	res = wf.Tensor(np.expand_dims(tensor.detach(), axis=axis), extend=tensor, is_constant=False)
+	wf.register_derivative(res, ExpandDimsBackward(tensor), tensor)
+	wf.register_variables(res, tensor.variables)
+	return res
+
+def reshape(tensor, dim, require_grad=True):
+	def ReshapeBackward(tensor):
+		def _ReshapeBackward(x):
+			return tensor.reshape(dim).zero_grad()
+		return _ReshapeBackward
+	res = wf.Tensor(np.reshape(tensor.detach(), dim), extend=tensor, is_constant=False)
+	wf.register_derivative(res, ReshapeBackward(tensor), tensor)
+	wf.register_variables(res, tensor.variables)
 	return res
 

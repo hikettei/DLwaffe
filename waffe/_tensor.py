@@ -186,8 +186,8 @@ class Tensor():
                 self.sync()
                 return res      
         else:
-            assert self.dim()[0] == y.dim()[0]
-            assert self.dim()[1] == y.dim()[1]
+            assert self.dim()[0] == y.dim()[0], "{}, {}".format(self.dim(), y.dim())
+            assert self.dim()[1] == y.dim()[1], "{}, {}".format(self.dim(), y.dim())
             gsize, lsize, M, N, res = create_res_buffer(self)
             event = self.device.prg.matsum(self.device.queue, gsize, lsize, M, N, self.x_buf, y.x_buf, res.x_buf)
             cl.wait_for_events([event, ])
@@ -293,6 +293,11 @@ class Tensor():
         register_derivative(res, bw._TransposeBackward(self), self, variables=self.variables)
         return res
 
+    def expand_dims(self, dim):
+        return wf.expand_dims(self, dim)
+
+    def reshape(self, dim):
+        return wf.reshape(self, dim)
 
     def backward(self):
         self.sync()

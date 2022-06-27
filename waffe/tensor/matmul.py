@@ -14,7 +14,7 @@ def _DotProductBackward(L, X, Y):
 			return (Y @ L / (Y.transpose() @ Y)).no_grad()
 		else:
 			Exception("")
-			
+
 	return DotProductBackward
 
 def _dot_product(A, B):
@@ -37,7 +37,11 @@ def _dot_product(A, B):
 	return res
 
 def _matrix_vector_product(A, B):
-	pass
+	"""
+	Inputs : A ... 2darray
+			 B ... 1darray
+	"""
+	return _matrix_matrix_product(A, B)
 
 def _MMProductBackward(L, X, Y):
 	def MMProductBackward(g):
@@ -57,8 +61,8 @@ def _MMProductBackward(L, X, Y):
 
 def _matrix_matrix_product(A, B):
 	#2x2
-	assert A.dim()[0] == B.dim()[1], "cannot multiply mat1 and mat2 due to mismatch of A.dim()[0]"
-	M = np.int32(A.dim()[1])
+	#assert A.dim()[1] == B.dim()[0], "cannot multiply mat1 and mat2 due to mismatch of A.dim()[0]"
+	M = np.int32(A.dim()[0])
 	K = np.int32(A.dim()[0])
 	N = np.int32(B.dim()[1])
 
