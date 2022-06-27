@@ -297,7 +297,7 @@ class Tensor():
 
         event = self.device.prg.transpose(self.device.queue, gsize, lsize, N, M, self.x_buf, res.x_buf)
         cl.wait_for_events([event, ])
-        #TransposeBackward
+        register_derivative(res, bw._TransposeBackward(self), self, variables=self.variables)
         return res
 
 

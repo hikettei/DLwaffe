@@ -5,14 +5,29 @@ import numpy as np
 import pyopencl as cl
 import pyopencl.array as clarr
 
-def MatMulBackward():
-	pass
 
 def _dot_product(A, B):
 	pass
 
 def _matrix_vector_product(A, B):
 	pass
+
+def _MMProductBackward(L, X, Y):
+	def MMProductBackward(g):
+		if g == X:
+			if (g.grad.detach() == [[1.]]).any():
+				return X.transpose()
+			else:
+				return g.grad @ X.transpose()
+		elif g == Y:
+			if (g.grad.detach() == [[1.]]).any():
+				return Y.transpose()
+			else:
+				return Y.transpose() @ g.grad
+		else:
+			Exception("")
+
+	return MMProductBackward
 
 def _matrix_matrix_product(A, B):
 	#2x2
@@ -29,7 +44,9 @@ def _matrix_matrix_product(A, B):
 	lsize = (int(A.device.TSM/A.device.WPTM), int(A.device.TSM/A.device.WPTM))
 	event = A.device.prg.mm_product(A.device.queue, gsize, lsize, M, N, K, A.x_buf, B.x_buf, res.x_buf)
 	cl.wait_for_events([event, ])
-	# matbackward
+	
+	wf.register_derivative(res, _MMProductBackward(res, A, B), A, B)
+	wf.register_variables(res, [A, B])
 	return res
 
 def _batch_product(A, B):
@@ -69,3 +86,4 @@ def matmul(A, B):
 	else:
 		# dim is larger than 3
 		return _batch_product(A, B)
+

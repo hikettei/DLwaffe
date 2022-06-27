@@ -181,3 +181,8 @@ def _PowBackward(tensor, k):
     def PowBackward(x):
         return wf.Tensor(tensor.detach() * k, device=tensor.device).no_grad()
     return PowBackward
+
+def _TransposeBackward(tensor):
+    def TransposeBackward(x):
+        return tensor.transpose().zero_grad()
+    return TransposeBackward
