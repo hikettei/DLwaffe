@@ -8,7 +8,7 @@ class Linear(wf.Model):
         self.in_features = in_features
         self.out_features = out_features
         self.weights = wf.empty((in_features, out_features), device=device)
-        self.bias    = wf.empty(out_features, **factory_kwargs)
+        self.bias    = wf.empty(out_features, **factory_kwargs) if bias else None
 
     @wf.Model.on_batch
     def on_batch(self, x):

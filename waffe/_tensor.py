@@ -41,11 +41,11 @@ class WaffeDevice():
 def is_data(x):
     return isinstance(x, (float, int)) or type(x) in DTYPES.keys()
 
-def register_derivative(tensor, f, g, variables=None):
+def register_derivative(tensor, f, g, variables=None, deep_variables=True):
     #g... 次にBackwardするtensor
     #self.variables list of 変数
     if tensor.requires_grad:
-        tensor.backwards = {"grad_fn":lambda self: bw.DerivBackward(g, [f], variables=self.variables, tensor_self=self),
+        tensor.backwards = {"grad_fn":lambda self: bw.DerivBackward(g, [f], variables=self.variables, tensor_self=self, deep_variables=deep_variables),
                             "grad_name":f.__name__}
 
         if variables is not None:
@@ -65,6 +65,16 @@ def register_variables(tensor, variables):
 def create_res_buffer(tensor):
     M = np.int32(tensor.dim()[0])
     N = np.int32(tensor.dim()[1])
+
+    cpu_earr = np.empty((M, N), dtype=tensor.device.DTYPE)
+    resbuff  = cl.Buffer(tensor.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
+    res      = Tensor(cpu_earr, device=tensor.device, x_buf=resbuff, extend=tensor, is_constant=False)
+
+    return (int(M), int(N)), (int(tensor.device.TS), int(tensor.device.TS)), M, N, res
+
+def create_res_buffer_t(tensor):
+    N = np.int32(tensor.dim()[0])
+    M = np.int32(tensor.dim()[1])
 
     cpu_earr = np.empty((M, N), dtype=tensor.device.DTYPE)
     resbuff  = cl.Buffer(tensor.device.ctx, cl.mem_flags.READ_WRITE, size=cpu_earr.nbytes)
@@ -155,8 +165,18 @@ class Tensor():
         y_data_ex = y_data is not None
 
         # [[1,2,3], [4,5,6], [7,8,9]] + [1,2,3]
-        if self.dim() != y.dim():
+
+        if self.dim() != y.dim() and not (self_data_ex or y_data_ex):
             if self.dim()[1] == y.dim()[1]:
+                K = np.int32(y.dim()[1])
+                gsize, lsize, M, N, res = create_res_buffer(self)
+                event = self.device.prg.matpluscols(self.device.queue, gsize, lsize, M, N, K, self.x_buf, y.x_buf, res.x_buf)
+                cl.wait_for_events([event, ])
+                register_backwards_node(res, bw._AddBackward0(self), self, y, variables=[self, y])
+                return res
+
+            if self.dim()[0] == y.dim()[0]: #???
+                self = self.transpose()
                 K = np.int32(y.dim()[1])
                 gsize, lsize, M, N, res = create_res_buffer(self)
                 event = self.device.prg.matpluscols(self.device.queue, gsize, lsize, M, N, K, self.x_buf, y.x_buf, res.x_buf)
@@ -301,7 +321,7 @@ class Tensor():
 
     def backward(self):
         self.sync()
-        #print(self.backwards)
+        print(self.backwards)
         #assert self.data is not None, "grad can be implicitly created only for scalar outputs"
         self.backwards["grad_fn"](self)
         return None

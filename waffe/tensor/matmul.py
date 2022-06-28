@@ -41,7 +41,7 @@ def _matrix_vector_product(A, B):
 	Inputs : A ... 2darray
 			 B ... 1darray
 	"""
-	return _matrix_matrix_product(A, B)
+	return _matrix_matrix_product(A, B).expand_dims(0)
 
 def _MMProductBackward(L, X, Y):
 	def MMProductBackward(g):
@@ -75,7 +75,7 @@ def _matrix_matrix_product(A, B):
 	event = A.device.prg.mm_product(A.device.queue, gsize, lsize, M, N, K, A.x_buf, B.x_buf, res.x_buf)
 	cl.wait_for_events([event, ])
 	
-	wf.register_derivative(res, _MMProductBackward(res, A, B), A, B)
+	wf.register_derivative(res, _MMProductBackward(res, A, B), A, B, deep_variables=False)
 	wf.register_variables(res, [A, B])
 	return res
 

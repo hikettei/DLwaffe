@@ -82,7 +82,7 @@ def sigmoid(tensor, require_grad=True):
 
 	if require_grad:
 		wf.register_derivative(res, sigmoid_backward(tensor), tensor)
-		wf.register_variables(res, tensor.variables)
+		wf.register_variables(res, [tensor])
 	res.sync()
 
 	return res
@@ -94,7 +94,7 @@ def expand_dims(tensor, axis, require_grad=True):
 		return _ExpandDimsBackward
 	res = wf.Tensor(np.expand_dims(tensor.detach(), axis=axis), extend=tensor, is_constant=False)
 	wf.register_derivative(res, ExpandDimsBackward(tensor), tensor)
-	wf.register_variables(res, tensor.variables)
+	wf.register_variables(res, [tensor])
 	return res
 
 def reshape(tensor, dim, require_grad=True):
@@ -104,6 +104,6 @@ def reshape(tensor, dim, require_grad=True):
 		return _ReshapeBackward
 	res = wf.Tensor(np.reshape(tensor.detach(), dim), extend=tensor, is_constant=False)
 	wf.register_derivative(res, ReshapeBackward(tensor), tensor)
-	wf.register_variables(res, tensor.variables)
+	wf.register_variables(res, [tensor])
 	return res
 

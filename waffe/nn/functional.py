@@ -4,6 +4,7 @@ def linear(x, weight, bias):
 	#x      : (*, in_features)
 	#weight : (out_features, in_features)
 	#bias   : (out_features, 1) or None
+
 	if bias is None:
 		return x @ weight.transpose()
 	else:
