@@ -344,7 +344,7 @@ class Tensor():
                 return np.reshape(x[:self.shape[0], :self.shape[1]], self.d_shape).astype(self.dtype)
             except ValueError: #???
                 return np.reshape(x[:self.shape[0], :self.shape[1]], self.shape).astype(self.dtype)
-                return x.reshape(-1)
+                #return x.reshape(-1)
 
     def write_mem(self, x_tensor):
         event = cl.enqueue_write_buffer(
@@ -370,9 +370,8 @@ class Tensor():
         return self
 
     def zero_grad(self):
-        # 勾配をリセット
-        self = Tensor(self.detach(), extend=self)
-        return self
+        # reset grads
+        return Tensor(self.detach(), extend=self)
 
     def reset_grad_value(self):
         self.grad = None

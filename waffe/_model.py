@@ -11,23 +11,27 @@ class Model(ModuleEventListener):
             return result
 
     def parameters(self):
-    	parameters = {self.__class__: []}
-    	for var_name, status in self.__dict__.items():
-    		if isinstance(status, wf.Model):
-    			parameters[self.__class__].append(status.parameters())
+        parameters = {self.__class__: []}
+        for var_name, status in self.__dict__.items():
+            if isinstance(status, wf.Model):
+                parameters[self.__class__].append(status.parameters())
 
-    		if isinstance(status, wf.Tensor):
-    			if status.is_param:
-    				parameters[self.__class__].append(status)
+            if isinstance(status, wf.Tensor):
+                if status.is_param:
+                    parameters[self.__class__].append(status)
 
-    	return parameters
+        return parameters
 
     def parameter_variables(self):
-    	parameters = []
-    	for var_name, status in self.__dict__.items():
-    		if isinstance(status, wf.Model):
-    			parameters += status.parameter_variables()
-    		if isinstance(status, wf.Tensor):
-    			if status.is_param:
-    				parameters.append(status)
-    	return parameters
+        parameters = []
+        def _zero_grad(var, status):
+            def __zero_grad():
+                setattr(self, var, status.zero_grad())
+            return __zero_grad
+        for var_name, status in self.__dict__.items():
+            if isinstance(status, wf.Model):
+                parameters += status.parameter_variables()
+            if isinstance(status, wf.Tensor):
+                if status.is_param:
+                    parameters.append([status, lambda x: setattr(self, var_name, x), _zero_grad(var_name, status)])
+        return parameters
