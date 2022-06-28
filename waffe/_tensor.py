@@ -321,7 +321,6 @@ class Tensor():
 
     def backward(self):
         self.sync()
-        print(self.backwards)
         #assert self.data is not None, "grad can be implicitly created only for scalar outputs"
         self.backwards["grad_fn"](self)
         return None
