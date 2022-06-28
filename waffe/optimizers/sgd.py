@@ -1,21 +1,10 @@
 
 import waffe as wf
+from .optimizer import OptimizerBase
 
-class SGD():
-	def __init__(self, model, lr=1e-4):
-		self.params = model.parameter_variables()
-		self.lr = lr
-	
-	def step(self):
-		for param in self.params:
-			self.update(param)
-
+class SGD(OptimizerBase):
 	def update(self, param):
 		grad = param.grad
 		if grad is None:
 			return
-		param -= grad * param
-
-	def zero_grad(self):
-		for param in self.params:
-			param.zero_grad()
+		param -= grad * self.lr
