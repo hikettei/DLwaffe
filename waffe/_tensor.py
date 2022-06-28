@@ -131,6 +131,7 @@ class Tensor():
         self.variables = [self] # 
         self.grad = None
         self.is_input = True
+        self.is_param = False
 
         if extend is not None:
             self.device = extend.device
@@ -227,6 +228,7 @@ class Tensor():
 
         if is_data(y):
             y_data = y
+            y = Tensor(y, device=self.device)
         else:
             y_data = y.data
 
@@ -282,6 +284,12 @@ class Tensor():
 
     def __len__(self):
         return len(self.detach())
+
+    def __iter__(self):
+        return iter(self.detach())
+
+    def __getitem__(self, index):
+        return Tensor(self.detach()[index], extend=self)
 
     def sum(self):
         total = np.sum(self.detach())
@@ -372,6 +380,13 @@ class Tensor():
 
     def is_data(self):
         return is_data(self.detach())
+
+    def as_param(self):
+        return wf.Parameter(self)
+
+def Parameter(tensor):
+    tensor.is_param = True
+    return tensor
 
 class no_grad():
     pass

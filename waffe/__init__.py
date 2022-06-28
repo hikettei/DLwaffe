@@ -1,7 +1,7 @@
 from ._model   import Model
 from ._dataset import Dataset
-from ._trainer import Trainer
-from ._tensor  import Tensor, WaffeDevice, empty, randn, randint, register_derivative, register_backwards_node, register_variables
+from ._trainer import Trainer, train
+from ._tensor  import Tensor, WaffeDevice, empty, randn, randint, register_derivative, register_backwards_node, register_variables, Parameter
 from .tensor.utils import *
 from .tensor.matmul import matmul
 
