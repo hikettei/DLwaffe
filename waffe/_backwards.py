@@ -34,6 +34,10 @@ def collect_grads_for_deep_variables0(target_variables, v_grads={}):
     if not target_variables.is_constant:
         for v in target_variables.variables:
             collect_grads_for_deep_variables0(v, v_grads=v_grads)
+
+def grad_outputs(variable):
+    pass
+    
 # Backwards
 
 def AddBackward(g, args, variables=[], tensor_self=None):

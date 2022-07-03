@@ -26,7 +26,7 @@ class Model(ModuleEventListener):
         parameters = []
         def _zero_grad(var, status):
             def __zero_grad():
-                setattr(self, var, status.zero_grad())
+                setattr(self, var, status.zero_grad(is_param=True))
             return __zero_grad
         for var_name, status in self.__dict__.items():
             if isinstance(status, wf.Model):

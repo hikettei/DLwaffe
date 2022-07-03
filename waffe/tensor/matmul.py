@@ -31,8 +31,9 @@ def _dot_product(A, B):
 
 	event = A.device.prg.matdot(A.device.queue, gsize, lsize, M, N, A.x_buf, B.x_buf, res.x_buf)
 	cl.wait_for_events([event, ])
+	res = res.sum()
 
-	wf.register_derivative(res, _DotProductBackward(res, A, B), A, B)
+	wf.register_derivative(res, _DotProductBackward(res, A, B), A, B, deep_variables=False)
 	wf.register_variables(res, [A, B])
 	return res
 
@@ -80,7 +81,7 @@ def _matrix_matrix_product(A, B):
 	return res
 
 def _batch_product(A, B):
-	pass
+	assert False
 
 def matmul(A, B):
 	""" Computes the matrix multiplication of two arrays

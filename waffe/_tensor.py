@@ -152,7 +152,6 @@ class Tensor():
 
     def __add__(self, y):
         self.sync()
-        y.sync()
 
         if is_data(y):
             y_data = y
@@ -283,7 +282,7 @@ class Tensor():
         return res
 
     def __len__(self):
-        return len(self.detach())
+        return 1 if self.is_data else len(self.detach())
 
     def __iter__(self):
         return iter(self.detach())
@@ -291,11 +290,10 @@ class Tensor():
     def __getitem__(self, index):
         return Tensor(self.detach()[index], extend=self)
 
-    def sum(self):
+    def sum(self, keepdims=False):
         total = np.sum(self.detach())
         res = Tensor(total, device=self.device, is_constant=False)
         res.sync()
-
         register_backwards_node(res, bw._SumBackward(self), self, variables=self.variables)
         return res
 
@@ -369,9 +367,10 @@ class Tensor():
         self.requires_grad = False
         return self
 
-    def zero_grad(self):
+    def zero_grad(self, is_param=False):
         # reset grads
-        return Tensor(self.detach(), extend=self)
+        res = Tensor(self.detach(), extend=self)
+        return res.as_param() if is_param else res
 
     def reset_grad_value(self):
         self.grad = None

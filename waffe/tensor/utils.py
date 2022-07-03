@@ -51,7 +51,7 @@ def cos(tensor, require_grad=True):
 def log(tensor, require_grad=True):
 	def log_backward(tensor):
 		def _log_backward(x):
-			return 1 / tensor.detach()
+			return wf.Tensor(1 / tensor.detach(), extend=tensor)
 		return _log_backward
 
 	gsize, lsize, M, N, res = create_res_buffer(tensor)
