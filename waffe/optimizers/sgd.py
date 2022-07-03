@@ -7,4 +7,5 @@ class SGD(OptimizerBase):
 		grad = status.grad
 		if grad is None:
 			return
-		set_val(status - grad * self.lr)
+		status.set_tensor_data(status - grad * self.lr)
+		#set_val(status - grad * self.lr)

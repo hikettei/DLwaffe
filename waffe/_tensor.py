@@ -84,7 +84,34 @@ def create_res_buffer_t(tensor):
 
 class Tensor():
     #2回backwardとかしてないよね？
-    def __init__(self, x, x_buf=None, extend=None, dtype=None, device=None, is_constant=True, requires_grad=True):
+    def __init__(self, *args, **kwargs):
+        self.device  = None
+        self.data    = None
+        self.shape   = None
+        self.dtype   = None
+        self.d_shape = None
+
+        self.requires_grad = None
+        self.backwards     = None
+
+        self.is_constant   = None
+        self.variables     = None
+        self.grad          = None
+        self.is_input      = None
+        self.is_param      = None
+        self.set_data(*args, **kwargs)
+
+
+    def set_tensor_data(self, tensor):
+        return self.extend_tensor_status(tensor, variables=["data", "shape", "dtype", "d_shape", "x_buf"])
+        
+    def extend_tensor_status(self, tensor, variables=[]):
+        assert isinstance(tensor, Tensor), ""
+        for extend_variable in variables:
+            setattr(self, extend_variable, getattr(tensor, extend_variable))
+        return self
+
+    def set_data(self, x, x_buf=None, extend=None, dtype=None, device=None, is_constant=True, requires_grad=True):
         """
         Exa: wf.Tensor([1,2,3])
         Arguments:
@@ -327,6 +354,7 @@ class Tensor():
 
     def backward(self):
         self.sync()
+        #print(self.backwards)
         #assert self.data is not None, "grad can be implicitly created only for scalar outputs"
         self.backwards["grad_fn"](self)
         return None

@@ -47,12 +47,12 @@ def _matrix_vector_product(A, B):
 def _MMProductBackward(L, X, Y):
 	def MMProductBackward(g):
 		if g == X:
-			if (g.grad.detach() == [[1.]]).any():
+			if (g.grad.detach() == [[1.]]).all():
 				return X.transpose()
 			else:
 				return g.grad @ X.transpose()
 		elif g == Y:
-			if (g.grad.detach() == [[1.]]).any():
+			if (g.grad.detach() == [[1.]]).all():
 				return Y.transpose()
 			else:
 				return Y.transpose() @ g.grad

@@ -3,7 +3,7 @@ import waffe as wf
 import pyopencl as cl
 import pyopencl.array as clarr
 import numpy as np
-
+import torch
 
 def create_res_buffer(tensor):
 	M = np.int32(tensor.dim()[0])
@@ -72,18 +72,34 @@ def sigmoid(tensor, require_grad=True):
 			gsize, lsize, M, N, res = create_res_buffer(tensor)
 			event = tensor.device.prg.dsigmoid(tensor.device.queue, gsize, lsize, M, N, tensor.x_buf, res.x_buf)
 			cl.wait_for_events([event, ])
-			return res
+			return res.no_grad()
 		return _sigmoid_backward
 
 	gsize, lsize, M, N, res = create_res_buffer(tensor)
 
 	event = tensor.device.prg.sigmoid(tensor.device.queue, gsize, lsize, M, N, tensor.x_buf, res.x_buf)
 	cl.wait_for_events([event, ])
-
 	if require_grad:
 		wf.register_derivative(res, sigmoid_backward(tensor), tensor)
 		wf.register_variables(res, [tensor])
 	res.sync()
+
+	return res
+
+def relu(tensor, require_grad=True):
+	def _ReLuBackward(mask):
+		def ReLuBackward(dout):
+			res = tensor.detach()
+			res[mask] = 0.
+			return wf.Tensor(res, extend=dout)
+		return ReLuBackward
+
+	res  = tensor.detach()
+	mask = (res <= 0)
+	res[mask] = 0.
+	res = wf.Tensor(res, extend=tensor)
+	wf.register_derivative(res, _ReLuBackward(mask), tensor)
+	wf.register_variables(res, [tensor])
 
 	return res
 

@@ -24,14 +24,20 @@ class Model(ModuleEventListener):
 
     def parameter_variables(self):
         parameters = []
-        def _zero_grad(var, status):
+        def _zero_grad(var_name, status):
             def __zero_grad():
-                setattr(self, var, status.zero_grad(is_param=True))
+                setattr(getattr(self, var_name), "grad", None)
+                #setattr(self, var_name, status.zero_grad(is_param=True))
             return __zero_grad
+        def _refresh_param(status):
+            def refresh_param(x):
+                status.set_tensor_data(x)
+            return refresh_param
+
         for var_name, status in self.__dict__.items():
             if isinstance(status, wf.Model):
                 parameters += status.parameter_variables()
             if isinstance(status, wf.Tensor):
                 if status.is_param:
-                    parameters.append([status, lambda x: setattr(self, var_name, x), _zero_grad(var_name, status)])
+                    parameters.append([status, _refresh_param(status), _zero_grad(var_name, status)])
         return parameters
