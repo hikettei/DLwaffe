@@ -282,7 +282,7 @@ class Tensor():
         return res
 
     def __len__(self):
-        return 1 if self.is_data else len(self.detach())
+        return 1 if self.is_data() else len(self.detach())
 
     def __iter__(self):
         return iter(self.detach())
